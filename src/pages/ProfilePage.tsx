@@ -40,7 +40,7 @@ export default function ProfilePage() {
         .eq('author_id', user!.id)
         .order('updated_at', { ascending: false });
       if (error) throw error;
-      return data as (PersonalNote & { characters: Pick<Character,'id'|'name'|'is_pc'> })[];
+      return data as unknown as (PersonalNote & { characters: Pick<Character,'id'|'name'|'is_pc'> })[];
     },
     enabled: !!user,
   });

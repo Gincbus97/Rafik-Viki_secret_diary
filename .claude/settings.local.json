@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(& \"$PWD\\\\node_modules\\\\typescript\\\\bin\\\\tsc\" --noEmit -p \"$PWD\\\\tsconfig.json\" 2>&1 | Select-Object -First 100)",
+      "PowerShell(& \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" \"$PWD\\\\node_modules\\\\typescript\\\\bin\\\\tsc\" --noEmit -p \"$PWD\\\\tsconfig.json\" 2>&1 | Select-Object -First 150)",
+      "PowerShell(& \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" \"$PWD\\\\node_modules\\\\typescript\\\\bin\\\\tsc\" --noEmit -p \"$PWD\\\\tsconfig.json\"; \"EXIT=$LASTEXITCODE\")"
+    ]
+  }
+}
