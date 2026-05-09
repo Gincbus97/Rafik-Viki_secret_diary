@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body {
+    background-attachment: fixed;
+  }
+  h1, h2, h3, h4 { @apply font-display tracking-wide; }
+  ::selection { background: rgba(192,35,58,0.45); color: #fff; }
+  /* Slight texture overlay */
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none;
+    background-image: radial-gradient(rgba(216,83,110,0.04) 1px, transparent 1px);
+    background-size: 4px 4px;
+    z-index: 0;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-crypt/80 backdrop-blur-sm rounded-2xl shadow-crypt border border-gold/10 p-5;
+  }
+  .card-hover {
+    @apply hover:border-gold/30 hover:shadow-glow transition-all;
+  }
+  .input {
+    @apply w-full bg-velvet/70 border border-gold/15 rounded-lg px-3 py-2 text-bone placeholder:text-ash/60
+           focus:outline-none focus:border-blood focus:ring-2 focus:ring-blood/30 transition;
+  }
+  .label {
+    @apply block text-xs uppercase tracking-widest text-ash mb-1;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 font-medium
+           transition-all border select-none;
+  }
+  .btn-primary {
+    @apply btn bg-blood text-bone border-bloodlight/40 hover:bg-bloodlight hover:shadow-glow;
+  }
+  .btn-ghost {
+    @apply btn bg-velvet/40 text-bone border-gold/15 hover:border-gold/40 hover:bg-velvet/70;
+  }
+  .btn-danger {
+    @apply btn bg-transparent text-rose border-rose/30 hover:bg-rose/10;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium
+           bg-velvet/60 border border-gold/15 text-ash;
+  }
+  .chip-pc   { @apply bg-blood/15  text-rose      border-blood/30; }
+  .chip-npc  { @apply bg-velvet/60 text-moon      border-gold/20; }
+  .heading   { @apply text-3xl text-bone font-display; }
+  .subtle    { @apply text-ash text-sm; }
+  .divider   { @apply border-t border-gold/10 my-4; }
+  .link      { @apply text-rose hover:text-bloodlight underline-offset-4 hover:underline; }
+}
+
+/* Кастомный slider */
+input[type="range"] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 6px;
+  background: linear-gradient(to right, #8a0e1a 0%, #1d1014 0%);
+  border-radius: 999px; outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #d8536e;
+  border: 2px solid #1d1014;
+  box-shadow: 0 0 8px rgba(216,83,110,0.5);
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #d8536e; border: 2px solid #1d1014; cursor: pointer;
+}
+
+/* Стикеры — мягкая анимация */
+@keyframes float {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  50%      { transform: translateY(-4px) rotate(3deg); }
+}
+.sticker { animation: float 4s ease-in-out infinite; display: inline-block; }
+.sticker-2 { animation-delay: -1.5s; }
+.sticker-3 { animation-delay: -3s; }
