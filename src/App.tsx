@@ -13,6 +13,7 @@ import FactionsPage from './pages/FactionsPage';
 import LocationsPage from './pages/LocationsPage';
 import SessionsPage from './pages/SessionsPage';
 import ProfilePage from './pages/ProfilePage';
+import MindMap from './pages/MindMap';
 import { BatSticker, MoonSticker, RoseSticker } from './components/Stickers';
 
 function Protected({ children }: { children: ReactElement }) {
@@ -56,6 +57,7 @@ export default function App() {
                 <Route path="/factions" element={<FactionsPage />} />
                 <Route path="/locations" element={<LocationsPage />} />
                 <Route path="/sessions" element={<SessionsPage />} />
+                <Route path="/mindmap" element={<MindMap />} />
                 <Route path="/profile" element={<ProfilePage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>

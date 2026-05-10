@@ -17,7 +17,7 @@ export default function FactionsPage() {
     queryFn: async () => {
       const { data, error } = await supabase.from('factions').select('*').order('name');
       if (error) throw error;
-      return data as Faction[];
+      return data as unknown as Faction[];
     },
   });
 
@@ -26,7 +26,7 @@ export default function FactionsPage() {
     queryFn: async () => {
       const { data, error } = await supabase.from('characters').select('id,name,is_pc').order('name');
       if (error) throw error;
-      return data as Pick<Character,'id'|'name'|'is_pc'>[];
+      return data as unknown as Pick<Character,'id'|'name'|'is_pc'>[];
     },
   });
 
@@ -83,7 +83,7 @@ function FactionCard({
       const { data, error } = await supabase
         .from('faction_members').select('character_id, characters(id,name,is_pc)').eq('faction_id', faction.id);
       if (error) throw error;
-      return (data as any[]).map(r => r.characters) as Pick<Character,'id'|'name'|'is_pc'>[];
+      return (data as unknown as any[]).map(r => r.characters) as unknown as Pick<Character,'id'|'name'|'is_pc'>[];
     },
     enabled: expanded,
   });

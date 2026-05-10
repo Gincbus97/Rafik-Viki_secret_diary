@@ -32,9 +32,9 @@ export default function CharacterEdit({ mode }: Props) {
   const existing = useQuery({
     queryKey: ['character', id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('characters').select('*').eq('id', id).single();
+      const { data, error } = await supabase.from('characters').select('*').eq('id', id!).single();
       if (error) throw error;
-      return data as Character;
+      return data as unknown as Character;
     },
     enabled: mode === 'edit' && !!id,
   });
@@ -44,7 +44,7 @@ export default function CharacterEdit({ mode }: Props) {
     queryFn: async () => {
       const { data, error } = await supabase.from('characters').select('id,name').order('name');
       if (error) throw error;
-      return data as Pick<Character,'id'|'name'>[];
+      return data as unknown as Pick<Character,'id'|'name'>[];
     },
   });
 
@@ -53,7 +53,7 @@ export default function CharacterEdit({ mode }: Props) {
     queryFn: async () => {
       const { data, error } = await supabase.from('locations').select('id,name').order('name');
       if (error) throw error;
-      return data as Pick<LocationItem,'id'|'name'>[];
+      return data as unknown as Pick<LocationItem,'id'|'name'>[];
     },
   });
 
@@ -96,7 +96,7 @@ export default function CharacterEdit({ mode }: Props) {
         if (error) throw error;
         return data.id as string;
       } else {
-        const { error } = await supabase.from('characters').update(payload).eq('id', id);
+        const { error } = await supabase.from('characters').update(payload).eq('id', id!);
         if (error) throw error;
         return id as string;
       }

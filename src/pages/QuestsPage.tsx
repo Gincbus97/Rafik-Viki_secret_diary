@@ -37,7 +37,7 @@ export default function QuestsPage() {
         .select('id,title,status,description,reward,giver_id,received_at,finished_at')
         .order('updated_at', { ascending: false });
       if (error) throw error;
-      return data as Quest[];
+      return data as unknown as Quest[];
     },
   });
 
@@ -46,7 +46,7 @@ export default function QuestsPage() {
     queryFn: async () => {
       const { data, error } = await supabase.from('characters').select('id,name,is_pc').order('name');
       if (error) throw error;
-      return data as Pick<Character,'id'|'name'|'is_pc'>[];
+      return data as unknown as Pick<Character,'id'|'name'|'is_pc'>[];
     },
   });
 
@@ -66,7 +66,7 @@ export default function QuestsPage() {
     mutationFn: async ({ id, status }: { id: string; status: QuestStatus }) => {
       const patch: Partial<Quest> = { status };
       if (status === 'Completed' || status === 'Failed') patch.finished_at = new Date().toISOString().slice(0,10);
-      const { error } = await supabase.from('quests').update(patch).eq('id', id);
+      const { error } = await supabase.from('quests').update(patch as any).eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['quests'] }),

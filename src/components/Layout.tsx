@@ -7,6 +7,7 @@ import { BatSticker, BloodDropSticker, MoonSticker, RoseSticker } from './Sticke
 const NAV = [
   { to: '/',            label: 'Дом',        emoji: '🏰' },
   { to: '/characters',  label: 'Персонажи',  emoji: '🦇' },
+  { to: '/mindmap',     label: 'Карта',      emoji: '🕸' },
   { to: '/quests',      label: 'Квесты',     emoji: '📜' },
   { to: '/factions',    label: 'Фракции',    emoji: '🜲' },
   { to: '/locations',   label: 'Локации',    emoji: '🗝' },

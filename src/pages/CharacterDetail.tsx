@@ -20,9 +20,9 @@ export default function CharacterDetail() {
   const character = useQuery({
     queryKey: ['character', id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('characters').select('*').eq('id', id).single();
+      const { data, error } = await supabase.from('characters').select('*').eq('id', id!).single();
       if (error) throw error;
-      return data as Character;
+      return data as unknown as Character;
     },
     enabled: !!id,
   });
@@ -34,7 +34,7 @@ export default function CharacterDetail() {
         .from('characters').select('id,name')
         .eq('id', character.data!.sire_id!).maybeSingle();
       if (error) throw error;
-      return data as { id: string; name: string } | null;
+      return data as unknown as { id: string; name: string } | null;
     },
     enabled: !!character.data?.sire_id,
   });
@@ -45,7 +45,7 @@ export default function CharacterDetail() {
       const { data, error } = await supabase
         .from('locations').select('id,name').eq('id', character.data!.location_id!).maybeSingle();
       if (error) throw error;
-      return data as Pick<LocationItem,'id'|'name'> | null;
+      return data as unknown as Pick<LocationItem,'id'|'name'> | null;
     },
     enabled: !!character.data?.location_id,
   });
@@ -54,9 +54,9 @@ export default function CharacterDetail() {
     queryKey: ['char-quests', id],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('quest_characters').select('quest_id, quests(id,title,status)').eq('character_id', id);
+        .from('quest_characters').select('quest_id, quests(id,title,status)').eq('character_id', id!);
       if (error) throw error;
-      return (data as any[]).map(r => r.quests) as Pick<Quest,'id'|'title'|'status'>[];
+      return (data as unknown as any[]).map(r => r.quests) as unknown as Pick<Quest,'id'|'title'|'status'>[];
     },
     enabled: !!id,
   });
@@ -65,16 +65,16 @@ export default function CharacterDetail() {
     queryKey: ['char-factions', id],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('faction_members').select('faction_id, factions(id,name,kind)').eq('character_id', id);
+        .from('faction_members').select('faction_id, factions(id,name,kind)').eq('character_id', id!);
       if (error) throw error;
-      return (data as any[]).map(r => r.factions) as Pick<Faction,'id'|'name'|'kind'>[];
+      return (data as unknown as any[]).map(r => r.factions) as unknown as Pick<Faction,'id'|'name'|'kind'>[];
     },
     enabled: !!id,
   });
 
   const del = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from('characters').delete().eq('id', id);
+      const { error } = await supabase.from('characters').delete().eq('id', id!);
       if (error) throw error;
     },
     onSuccess: () => {

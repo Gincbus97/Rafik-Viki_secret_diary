@@ -17,7 +17,7 @@ export default function SessionsPage() {
         .from('sessions').select('*')
         .order('number', { ascending: false, nullsFirst: false });
       if (error) throw error;
-      return data as SessionRow[];
+      return data as unknown as SessionRow[];
     },
   });
 
@@ -26,7 +26,7 @@ export default function SessionsPage() {
     queryFn: async () => {
       const { data, error } = await supabase.from('characters').select('id,name,is_pc').order('name');
       if (error) throw error;
-      return data as Pick<Character,'id'|'name'|'is_pc'>[];
+      return data as unknown as Pick<Character,'id'|'name'|'is_pc'>[];
     },
   });
 
@@ -94,7 +94,7 @@ function SessionItem({
       const { data, error } = await supabase
         .from('session_attendees').select('character_id, characters(id,name,is_pc)').eq('session_id', session.id);
       if (error) throw error;
-      return (data as any[]).map(r => r.characters) as Pick<Character,'id'|'name'|'is_pc'>[];
+      return (data as unknown as any[]).map(r => r.characters) as unknown as Pick<Character,'id'|'name'|'is_pc'>[];
     },
     enabled: expanded,
   });

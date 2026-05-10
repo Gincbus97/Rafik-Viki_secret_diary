@@ -47,7 +47,7 @@ export default function RelationshipsBlock({ characterId, filter }: Props) {
       const { data, error } = await supabase
         .from('relationship_types').select('*').order('is_builtin', { ascending: false }).order('name');
       if (error) throw error;
-      return data as RelationshipType[];
+      return data as unknown as RelationshipType[];
     },
   });
 
@@ -57,7 +57,7 @@ export default function RelationshipsBlock({ characterId, filter }: Props) {
       const { data, error } = await supabase
         .from('characters').select('id,name,is_pc').order('name');
       if (error) throw error;
-      return data as Pick<Character,'id'|'name'|'is_pc'>[];
+      return data as unknown as Pick<Character,'id'|'name'|'is_pc'>[];
     },
   });
 

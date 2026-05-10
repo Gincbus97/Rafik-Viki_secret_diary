@@ -22,7 +22,7 @@ export default function LocationsPage() {
     queryFn: async () => {
       const { data, error } = await supabase.from('locations').select('*').order('name');
       if (error) throw error;
-      return data as LocationItem[];
+      return data as unknown as LocationItem[];
     },
   });
 
@@ -31,7 +31,7 @@ export default function LocationsPage() {
     queryFn: async () => {
       const { data, error } = await supabase.from('characters').select('id,name').order('name');
       if (error) throw error;
-      return data as Pick<Character,'id'|'name'>[];
+      return data as unknown as Pick<Character,'id'|'name'>[];
     },
   });
 
@@ -40,7 +40,7 @@ export default function LocationsPage() {
     queryFn: async () => {
       const { data, error } = await supabase.from('factions').select('id,name').order('name');
       if (error) throw error;
-      return data as Pick<Faction,'id'|'name'>[];
+      return data as unknown as Pick<Faction,'id'|'name'>[];
     },
   });
 

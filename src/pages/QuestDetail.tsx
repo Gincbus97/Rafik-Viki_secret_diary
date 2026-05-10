@@ -20,9 +20,9 @@ export default function QuestDetail() {
   const quest = useQuery({
     queryKey: ['quest', id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('quests').select('*').eq('id', id).single();
+      const { data, error } = await supabase.from('quests').select('*').eq('id', id!).single();
       if (error) throw error;
-      return data as Quest;
+      return data as unknown as Quest;
     },
     enabled: !!id,
   });
@@ -31,9 +31,9 @@ export default function QuestDetail() {
     queryKey: ['quest-obj', id],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('quest_objectives').select('*').eq('quest_id', id).order('position');
+        .from('quest_objectives').select('*').eq('quest_id', id!).order('position');
       if (error) throw error;
-      return data as QuestObjective[];
+      return data as unknown as QuestObjective[];
     },
     enabled: !!id,
   });
@@ -43,7 +43,7 @@ export default function QuestDetail() {
     queryFn: async () => {
       const { data, error } = await supabase.from('characters').select('id,name,is_pc').order('name');
       if (error) throw error;
-      return data as Pick<Character,'id'|'name'|'is_pc'>[];
+      return data as unknown as Pick<Character,'id'|'name'|'is_pc'>[];
     },
   });
 
@@ -52,7 +52,7 @@ export default function QuestDetail() {
     queryFn: async () => {
       const { data, error } = await supabase.from('locations').select('id,name').order('name');
       if (error) throw error;
-      return data as Pick<LocationItem,'id'|'name'>[];
+      return data as unknown as Pick<LocationItem,'id'|'name'>[];
     },
   });
 
@@ -62,9 +62,9 @@ export default function QuestDetail() {
       const { data, error } = await supabase
         .from('quest_characters')
         .select('character_id, characters(id,name,is_pc)')
-        .eq('quest_id', id);
+        .eq('quest_id', id!);
       if (error) throw error;
-      return (data as any[]).map(r => r.characters) as Pick<Character,'id'|'name'|'is_pc'>[];
+      return (data as unknown as any[]).map(r => r.characters) as unknown as Pick<Character,'id'|'name'|'is_pc'>[];
     },
     enabled: !!id,
   });
@@ -73,9 +73,9 @@ export default function QuestDetail() {
     queryKey: ['quest-locs', id],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('quest_locations').select('location_id, locations(id,name)').eq('quest_id', id);
+        .from('quest_locations').select('location_id, locations(id,name)').eq('quest_id', id!);
       if (error) throw error;
-      return (data as any[]).map(r => r.locations) as Pick<LocationItem,'id'|'name'>[];
+      return (data as unknown as any[]).map(r => r.locations) as unknown as Pick<LocationItem,'id'|'name'>[];
     },
     enabled: !!id,
   });
@@ -90,7 +90,7 @@ export default function QuestDetail() {
       if (patch.status === 'Completed' || patch.status === 'Failed') {
         if (!patch.finished_at) patch.finished_at = new Date().toISOString().slice(0,10);
       }
-      const { error } = await supabase.from('quests').update(patch).eq('id', id);
+      const { error } = await supabase.from('quests').update(patch).eq('id', id!);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -170,7 +170,7 @@ export default function QuestDetail() {
 
   const remove = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from('quests').delete().eq('id', id);
+      const { error } = await supabase.from('quests').delete().eq('id', id!);
       if (error) throw error;
     },
     onSuccess: () => {

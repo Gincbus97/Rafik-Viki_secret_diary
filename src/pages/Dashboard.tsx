@@ -11,7 +11,7 @@ async function fetchRecentCharacters() {
     .order('updated_at', { ascending: false })
     .limit(6);
   if (error) throw error;
-  return data as Pick<Character,'id'|'name'|'is_pc'|'clan'|'sect'|'portrait_url'|'updated_at'>[];
+  return data as unknown as Pick<Character,'id'|'name'|'is_pc'|'clan'|'sect'|'portrait_url'|'updated_at'>[];
 }
 
 async function fetchActiveQuests() {
@@ -22,7 +22,7 @@ async function fetchActiveQuests() {
     .order('updated_at', { ascending: false })
     .limit(5);
   if (error) throw error;
-  return data as Pick<Quest,'id'|'title'|'status'|'description'>[];
+  return data as unknown as Pick<Quest,'id'|'title'|'status'|'description'>[];
 }
 
 async function fetchRecentSessions() {
@@ -32,7 +32,7 @@ async function fetchRecentSessions() {
     .order('date', { ascending: false, nullsFirst: false })
     .limit(3);
   if (error) throw error;
-  return data as Pick<SessionRow,'id'|'number'|'date'|'title'|'summary'>[];
+  return data as unknown as Pick<SessionRow,'id'|'number'|'date'|'title'|'summary'>[];
 }
 
 export default function Dashboard() {
