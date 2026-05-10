@@ -16,14 +16,15 @@ import { createRelWithReciprocal } from '@/lib/relationships';
 import {
   CLANS, RECIPROCAL,
   type Character, type Relationship, type RelationshipType, type Faction,
+  type KindredData, type GhoulData,
 } from '@/lib/types';
 
 interface RelEdge extends Relationship {
-  type?: { id: string; name: string; category: 'mechanic' | 'personal' };
+  type?: { id: string; name: string; category: 'mechanic' | 'personal'; color?: string; dashed?: boolean; thickness?: number; hidden_from_manual?: boolean };
 }
 
 type CharMM = Pick<Character,
-  'id'|'name'|'is_pc'|'kind'|'clan'|'sect'|'portrait_url'|'mindmap_x'|'mindmap_y'
+  'id'|'name'|'is_pc'|'kind'|'clan'|'sect'|'portrait_url'|'mindmap_x'|'mindmap_y'|'sire_id'|'kind_data'|'life_status'
 >;
 
 // =============================== Локальные смещения рёбер (localStorage) ===============================
@@ -229,10 +230,10 @@ export default function MindMap() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('characters')
-        .select('id,name,is_pc,kind,clan,sect,portrait_url,mindmap_x,mindmap_y,life_status')
+        .select('id,name,is_pc,kind,clan,sect,portrait_url,mindmap_x,mindmap_y,life_status,sire_id,kind_data')
         .order('name');
       if (error) throw error;
-      return data as unknown as (CharMM & { life_status: string })[];
+      return data as unknown as CharMM[];
     },
   });
 
@@ -241,7 +242,7 @@ export default function MindMap() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('relationships')
-        .select('id,from_character_id,to_character_id,type_id,description,strength, type:relationship_types(id,name,category)');
+        .select('id,from_character_id,to_character_id,type_id,description,strength, type:relationship_types(id,name,category,color,dashed,thickness,hidden_from_manual)');
       if (error) throw error;
       return data as unknown as RelEdge[];
     },
@@ -379,15 +380,87 @@ export default function MindMap() {
       };
     });
 
-    // ---------- Грани ----------
-    const filteredRels = relationships.data
+    // ---------- Синтезируем mechanic-связи из полей персонажей ----------
+    // (Sire/Childe из characters.sire_id, Touchstone/BloodBond из kind_data,
+    //  Ghoul/Domitor из kind_data.domitor_id)
+    const synthesized: RelEdge[] = [];
+    const findType = (name: string) => (relTypes.data ?? []).find(t => t.name === name);
+    for (const c of characters.data) {
+      // Sire → этот персонаж (направление: Sire => Childe)
+      if (c.sire_id) {
+        const t = findType('Sire');
+        if (t) synthesized.push({
+          id: `synth-sire-${c.id}`,
+          from_character_id: c.sire_id,
+          to_character_id: c.id,
+          type_id: t.id,
+          description: null, started_at_date: null, started_at_session: null,
+          strength: 5, created_by: null, created_at: '',
+          type: { id: t.id, name: t.name, category: t.category, color: t.color, dashed: t.dashed, thickness: t.thickness },
+        });
+      }
+      // Touchstones (только Kindred используют)
+      const kd = (c.kind_data ?? {}) as KindredData & GhoulData;
+      if (Array.isArray(kd.touchstones)) {
+        const t = findType('Touchstone');
+        if (t) for (const tid of kd.touchstones) {
+          if (!tid) continue;
+          synthesized.push({
+            id: `synth-touchstone-${c.id}-${tid}`,
+            from_character_id: c.id,
+            to_character_id: tid,
+            type_id: t.id,
+            description: null, started_at_date: null, started_at_session: null,
+            strength: 4, created_by: null, created_at: '',
+            type: { id: t.id, name: t.name, category: t.category, color: t.color, dashed: t.dashed, thickness: t.thickness },
+          });
+        }
+      }
+      // Blood Bonds
+      if (Array.isArray(kd.blood_bonded_to)) {
+        for (const b of kd.blood_bonded_to) {
+          if (!b?.character_id) continue;
+          const t = findType(`Blood Bond ${b.level}`);
+          if (!t) continue;
+          synthesized.push({
+            id: `synth-bb-${c.id}-${b.character_id}-${b.level}`,
+            from_character_id: c.id,
+            to_character_id: b.character_id,
+            type_id: t.id,
+            description: null, started_at_date: null, started_at_session: null,
+            strength: 3 + (b.level ?? 1),
+            created_by: null, created_at: '',
+            type: { id: t.id, name: t.name, category: t.category, color: t.color, dashed: t.dashed, thickness: t.thickness },
+          });
+        }
+      }
+      // Ghoul: domitor → ghoul
+      if (c.kind === 'ghoul' && kd.domitor_id) {
+        const t = findType('Ghoul');
+        if (t) synthesized.push({
+          id: `synth-ghoul-${c.id}`,
+          from_character_id: kd.domitor_id,
+          to_character_id: c.id,
+          type_id: t.id,
+          description: null, started_at_date: null, started_at_session: null,
+          strength: 5, created_by: null, created_at: '',
+          type: { id: t.id, name: t.name, category: t.category, color: t.color, dashed: t.dashed, thickness: t.thickness },
+        });
+      }
+    }
+
+    // ---------- Грани: исключаем mechanic-rows, которые мы синтезируем ----------
+    const hiddenTypeIds = new Set((relTypes.data ?? []).filter(t => t.hidden_from_manual).map(t => t.id));
+    const dbRels = relationships.data.filter(r => !hiddenTypeIds.has(r.type_id));
+
+    const allRels = [...dbRels, ...synthesized]
       .filter(r => visibleChars.has(r.from_character_id) && visibleChars.has(r.to_character_id))
       .filter(r => (r.strength ?? 3) >= minStrength)
       .filter(r => categoryFilter === 'all' ? true : (r.type?.category ?? 'personal') === categoryFilter);
 
     const pairKey = (a: string, b: string) => [a, b].sort().join('|');
     const groups = new Map<string, RelEdge[]>();
-    for (const r of filteredRels) {
+    for (const r of allRels) {
       const k = pairKey(r.from_character_id, r.to_character_id);
       if (!groups.has(k)) groups.set(k, []);
       groups.get(k)!.push(r);
@@ -399,23 +472,29 @@ export default function MindMap() {
 
     const edges: Edge[] = [];
     for (const [, rels] of groups) {
-      if (rels.length === 1) {
-        edges.push(buildEdge(rels[0], false, undefined, 0, showDescriptions, showTypes, posById));
+      // Сортируем чтобы личное было первым (parallelIdx=0, центральная линия)
+      const sorted = [...rels].sort((a, b) => {
+        const aP = a.type?.category === 'personal' ? 0 : 1;
+        const bP = b.type?.category === 'personal' ? 0 : 1;
+        return aP - bP;
+      });
+      if (sorted.length === 1) {
+        edges.push(buildEdge(sorted[0], false, undefined, 0, showDescriptions, showTypes, posById));
         continue;
       }
-      const reciprocalPair = findReciprocalPair(rels);
+      const reciprocalPair = findReciprocalPair(sorted);
       if (reciprocalPair) {
         const [r1, r2] = reciprocalPair;
         edges.push(buildEdge(r1, false, r2, 0, showDescriptions, showTypes, posById));
-        const remaining = rels.filter(x => x !== r1 && x !== r2);
+        const remaining = sorted.filter(x => x !== r1 && x !== r2);
         remaining.forEach((r, idx) => edges.push(buildEdge(r, true, undefined, idx + 1, showDescriptions, showTypes, posById)));
       } else {
-        rels.forEach((r, idx) => edges.push(buildEdge(r, true, undefined, idx, showDescriptions, showTypes, posById)));
+        sorted.forEach((r, idx) => edges.push(buildEdge(r, idx > 0, undefined, idx, showDescriptions, showTypes, posById)));
       }
     }
 
     return { nodes, edges };
-  }, [characters.data, relationships.data, showPcOnly, hideTheDead, clanFilter, charactersInFaction, focusMode, focusId, hops, minStrength, lockPositions, categoryFilter, showDescriptions, showTypes]);
+  }, [characters.data, relationships.data, relTypes.data, showPcOnly, hideTheDead, clanFilter, charactersInFaction, focusMode, focusId, hops, minStrength, lockPositions, categoryFilter, showDescriptions, showTypes]);
 
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);
@@ -671,8 +750,10 @@ function buildEdge(
   posById: Map<string, { x: number; y: number }>,
 ): Edge {
   const cat = r.type?.category ?? 'personal';
-  const color = edgeColor(r.type?.name ?? '', cat);
-  const dashed = cat === 'personal';
+  // Цвет/пунктир/толщина — сначала из настроек типа в БД, потом фоллбэк по имени
+  const color = r.type?.color || edgeColor(r.type?.name ?? '', cat);
+  const dashed = r.type?.dashed ?? (cat === 'personal');
+  const thickness = r.type?.thickness ?? 1.0;
   const isBidirectional = !!reciprocal;
 
   const typeName = r.type?.name ?? '';
@@ -690,7 +771,11 @@ function buildEdge(
     posById.get(r.to_character_id),
   );
 
-  const baseStroke = 1 + ((r.strength ?? 3) - 1) * 0.5;
+  // Толщина: базовая по силе, помноженная на коэффициент типа.
+  // Для синтезированных (без strength) используем strength=3.
+  const baseStroke = (1 + ((r.strength ?? 3) - 1) * 0.4) * thickness;
+  // Личное всегда чуть ярче и толще, механика — слегка приглушённая
+  const isPersonal = cat === 'personal';
   return {
     id: r.id,
     source: r.from_character_id,
@@ -701,9 +786,9 @@ function buildEdge(
     type: 'chronicle',
     style: {
       stroke: color,
-      strokeWidth: baseStroke,
+      strokeWidth: baseStroke * (isPersonal ? 1.15 : 0.9),
       strokeDasharray: dashed ? '6 4' : undefined,
-      opacity: offset ? 0.9 : 1,
+      opacity: offset ? 0.85 : 1,
     },
     markerEnd: { type: MarkerType.ArrowClosed, color },
     markerStart: isBidirectional ? { type: MarkerType.ArrowClosed, color } : undefined,
@@ -769,7 +854,7 @@ function CreateRelationshipModal({
 }: {
   fromId: string;
   toId: string;
-  characters: (CharMM & { life_status: string })[];
+  characters: CharMM[];
   relTypes: RelationshipType[];
   createdBy: string | null;
   onClose: () => void;
@@ -777,10 +862,12 @@ function CreateRelationshipModal({
 }) {
   const fromChar = characters.find(c => c.id === fromId);
   const toChar   = characters.find(c => c.id === toId);
-  const personalTypes = relTypes.filter(t => t.category === 'personal');
-  const mechanicTypes = relTypes.filter(t => t.category === 'mechanic');
+  // Только разрешённые в ручном добавлении (механика типа Sire/Touchstone — нет, она через чарник)
+  const manualTypes  = relTypes.filter(t => !t.hidden_from_manual);
+  const personalTypes = manualTypes.filter(t => t.category === 'personal');
+  const mechanicTypes = manualTypes.filter(t => t.category === 'mechanic');
 
-  const [typeId, setTypeId] = useState(relTypes[0]?.id ?? '');
+  const [typeId, setTypeId] = useState(manualTypes[0]?.id ?? '');
   const [desc, setDesc] = useState('');
   const [strength, setStrength] = useState(3);
   const [busy, setBusy] = useState(false);
@@ -788,11 +875,12 @@ function CreateRelationshipModal({
 
   const selectedType = relTypes.find(t => t.id === typeId);
   const reciprocalName = selectedType ? RECIPROCAL[selectedType.name] : undefined;
+  const descRequired = !!fromChar?.is_pc || !!toChar?.is_pc;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (!desc.trim()) {
-      setErr('Опиши что это за связь — без описания нельзя.');
+    if (descRequired && !desc.trim()) {
+      setErr('Связь касается игрока — обязательно опиши, что между ними происходит.');
       return;
     }
     setBusy(true); setErr(null);
@@ -801,7 +889,7 @@ function CreateRelationshipModal({
         from_character_id: fromId,
         to_character_id: toId,
         type_id: typeId,
-        description: desc.trim(),
+        description: desc.trim() || null,
         started_at_date: null,
         started_at_session: null,
         strength,
@@ -843,13 +931,16 @@ function CreateRelationshipModal({
         </div>
 
         <div>
-          <label className="label">Описание <span className="text-rose">*</span></label>
+          <label className="label">
+            Описание {descRequired && <span className="text-rose">*</span>}
+            {!descRequired && <span className="text-ash text-xs ml-1">(не обязательно — связь NPC↔NPC)</span>}
+          </label>
           <textarea
             className="input min-h-[60px]"
-            required
+            required={descRequired}
             value={desc}
             onChange={e => setDesc(e.target.value)}
-            placeholder='напр. "BFFs — но за спиной флиртует с её сиром"'
+            placeholder={descRequired ? 'Связь касается игрока — опиши историю...' : 'Опционально...'}
           />
         </div>
 
@@ -862,7 +953,7 @@ function CreateRelationshipModal({
 
         <div className="flex gap-2 justify-end">
           <button type="button" onClick={onClose} className="btn-ghost">Отмена</button>
-          <button type="submit" className="btn-primary" disabled={busy || !desc.trim()}>
+          <button type="submit" className="btn-primary" disabled={busy || (descRequired && !desc.trim())}>
             {busy ? 'Связываем...' : 'Создать связь'}
           </button>
         </div>

@@ -62,6 +62,13 @@ export default function Layout({ children }: { children: ReactNode }) {
           </nav>
           <div className="ml-auto flex items-center gap-2">
             <button
+              onClick={() => nav('/settings/types')}
+              className="text-sm text-ash hover:text-bone"
+              title="Настройка типов связей"
+            >
+              ⚙
+            </button>
+            <button
               onClick={() => nav('/profile')}
               className="text-sm text-ash hover:text-bone hidden sm:inline"
               title="Профиль"

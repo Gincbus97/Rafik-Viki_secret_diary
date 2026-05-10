@@ -7,7 +7,7 @@ import {
   CLANS, SECTS, DEFAULT_DISCIPLINES, CREATURE_KINDS, LIFE_STATUSES,
   CLAN_BANES, CLAN_COMPULSIONS,
   type Character, type Discipline, type LocationItem, type CreatureKind, type LifeStatus,
-  type GhoulData, type HumanData, type OtherData,
+  type KindredData, type GhoulData, type HumanData, type OtherData,
 } from '@/lib/types';
 
 const EMPTY: Partial<Character> = {
@@ -218,6 +218,8 @@ export default function CharacterEdit({ mode }: Props) {
         <KindredSection
           form={form}
           set={set}
+          setKindData={setKindData}
+          kindData={(form.kind_data ?? {}) as KindredData}
           characters={(characters.data ?? []).filter(c => c.id !== id)}
         />
       )}
@@ -348,13 +350,40 @@ export default function CharacterEdit({ mode }: Props) {
 
 // =============================== Kindred ===============================
 function KindredSection({
-  form, set, characters,
+  form, set, kindData, setKindData, characters,
 }: {
   form: Partial<Character>;
   set: <K extends keyof Character>(k: K, v: Character[K] | null | undefined) => void;
+  kindData: KindredData;
+  setKindData: (p: Record<string, unknown>) => void;
   characters: Pick<Character,'id'|'name'>[];
 }) {
   const isCustomSect = !SECTS.includes(form.sect as any);
+  const touchstones = kindData.touchstones ?? [];
+  const bloodBonds = kindData.blood_bonded_to ?? [];
+  const charsById = new Map(characters.map(c => [c.id, c]));
+
+  function addTouchstone(cid: string) {
+    if (!cid || touchstones.includes(cid)) return;
+    setKindData({ touchstones: [...touchstones, cid] });
+  }
+  function removeTouchstone(cid: string) {
+    setKindData({ touchstones: touchstones.filter(t => t !== cid) });
+  }
+  function addBond() {
+    setKindData({ blood_bonded_to: [...bloodBonds, { character_id: '', level: 1 }] });
+  }
+  function patchBond(idx: number, patch: Partial<{ character_id: string; level: 1 | 2 | 3 }>) {
+    const next = [...bloodBonds];
+    next[idx] = { ...next[idx], ...patch };
+    setKindData({ blood_bonded_to: next });
+  }
+  function removeBond(idx: number) {
+    const next = [...bloodBonds];
+    next.splice(idx, 1);
+    setKindData({ blood_bonded_to: next });
+  }
+
   return (
     <section className="card space-y-4">
       <h2 className="text-xl">🧛 Kindred</h2>
@@ -367,7 +396,6 @@ function KindredSection({
             onChange={e => {
               const newClan = e.target.value;
               set('clan', newClan || null);
-              // авто-bane/compulsion если пусто
               if (newClan && (!form.bane || form.bane.trim() === '') && CLAN_BANES[newClan]) set('bane', CLAN_BANES[newClan]);
               if (newClan && (!form.compulsion || form.compulsion.trim() === '') && CLAN_COMPULSIONS[newClan]) set('compulsion', CLAN_COMPULSIONS[newClan]);
             }}
@@ -430,6 +458,63 @@ function KindredSection({
         <div>
           <label className="label">Статус в секте</label>
           <input className="input" placeholder="Ancilla, Harpy, Sheriff..." value={form.status_in_sect ?? ''} onChange={e => set('status_in_sect', e.target.value)} />
+        </div>
+      </div>
+
+      {/* Touchstones */}
+      <div className="border-t border-gold/10 pt-4">
+        <label className="label">Touchstones — смертные якоря Humanity</label>
+        <p className="text-xs text-ash mb-2">
+          Появятся на карте автоматически как сплошная линия от тебя к якорю.
+        </p>
+        <div className="flex flex-wrap gap-2 mb-2">
+          {touchstones.length === 0 && <p className="subtle text-sm">Якорей пока нет.</p>}
+          {touchstones.map(tid => (
+            <span key={tid} className="chip">
+              {charsById.get(tid)?.name ?? '...'}
+              <button type="button" onClick={() => removeTouchstone(tid)} className="ml-1 text-rose">×</button>
+            </span>
+          ))}
+        </div>
+        <select className="input" value="" onChange={e => addTouchstone(e.target.value)}>
+          <option value="">+ добавить touchstone…</option>
+          {characters.filter(c => !touchstones.includes(c.id)).map(c => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Blood Bonds */}
+      <div className="border-t border-gold/10 pt-4">
+        <label className="label">Blood Bonds — кровные узы (кому ты подчинён и на каком уровне)</label>
+        <p className="text-xs text-ash mb-2">
+          Уровень 1–3. Появятся на карте отдельной линией. На уровне 3 — полный bond.
+        </p>
+        <div className="space-y-2">
+          {bloodBonds.length === 0 && <p className="subtle text-sm">Bond'ов нет.</p>}
+          {bloodBonds.map((b, i) => (
+            <div key={i} className="flex gap-2 items-center">
+              <select
+                className="input flex-1"
+                value={b.character_id}
+                onChange={e => patchBond(i, { character_id: e.target.value })}
+              >
+                <option value="">— выбери —</option>
+                {characters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <select
+                className="input w-32"
+                value={b.level}
+                onChange={e => patchBond(i, { level: parseInt(e.target.value) as 1 | 2 | 3 })}
+              >
+                <option value={1}>уровень 1</option>
+                <option value={2}>уровень 2</option>
+                <option value={3}>уровень 3 (полный)</option>
+              </select>
+              <button type="button" onClick={() => removeBond(i)} className="btn-danger text-sm">×</button>
+            </div>
+          ))}
+          <button type="button" onClick={addBond} className="btn-ghost text-sm">+ добавить bond</button>
         </div>
       </div>
     </section>

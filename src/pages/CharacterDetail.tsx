@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/auth';
 import {
   KIND_SHORT, LIFE_STATUSES,
   type Character, type Quest, type Faction, type LocationItem,
-  type GhoulData, type HumanData, type OtherData,
+  type KindredData, type GhoulData, type HumanData, type OtherData,
 } from '@/lib/types';
 import Avatar from '@/components/Avatar';
 import RelationshipsBlock from '@/components/RelationshipsBlock';
@@ -162,6 +162,7 @@ export default function CharacterDetail() {
       </div>
 
       {/* Kind-specific блоки */}
+      {c.kind === 'kindred' && <KindredInfo data={c.kind_data as KindredData} />}
       {c.kind === 'ghoul' && <GhoulInfo data={c.kind_data as GhoulData} />}
       {c.kind === 'human' && <HumanInfo data={c.kind_data as HumanData} />}
       {c.kind === 'other' && <OtherInfo data={c.kind_data as OtherData} />}
@@ -182,7 +183,7 @@ export default function CharacterDetail() {
               ))}
             </div>
           </div>
-          <RelationshipsBlock characterId={c.id} filter={relFilter} />
+          <RelationshipsBlock characterId={c.id} currentIsPc={c.is_pc} filter={relFilter} />
         </section>
 
         <section className="space-y-4">
@@ -266,6 +267,77 @@ export default function CharacterDetail() {
           <p className="text-bone/90 whitespace-pre-wrap leading-relaxed">{c.notes}</p>
         </section>
       )}
+    </div>
+  );
+}
+
+function KindredInfo({ data }: { data: KindredData }) {
+  const ts = data.touchstones ?? [];
+  const bonds = data.blood_bonded_to ?? [];
+  if (ts.length === 0 && bonds.length === 0) return null;
+  return (
+    <section className="card border-blood/20 space-y-3">
+      <h2 className="text-xl">🧛 Узы Kindred</h2>
+      {ts.length > 0 && <KindredLinks ids={ts} title="Touchstones" emoji="✨" />}
+      {bonds.length > 0 && <BloodBondsList bonds={bonds} />}
+    </section>
+  );
+}
+
+function KindredLinks({ ids, title, emoji }: { ids: string[]; title: string; emoji: string }) {
+  const list = useQuery({
+    queryKey: ['ts-batch', ids.join(',')],
+    queryFn: async () => {
+      if (ids.length === 0) return [];
+      const { data, error } = await supabase
+        .from('characters').select('id,name,is_pc').in('id', ids);
+      if (error) throw error;
+      return data as unknown as { id: string; name: string; is_pc: boolean }[];
+    },
+    enabled: ids.length > 0,
+  });
+  return (
+    <div>
+      <p className="label">{emoji} {title}</p>
+      <div className="flex flex-wrap gap-2">
+        {(list.data ?? []).map(c => (
+          <Link key={c.id} to={`/characters/${c.id}`} className="chip hover:border-bloodlight transition">
+            {c.name} {c.is_pc && <span className="text-rose ml-1">PC</span>}
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BloodBondsList({ bonds }: { bonds: { character_id: string; level: 1 | 2 | 3 }[] }) {
+  const ids = bonds.map(b => b.character_id).filter(Boolean);
+  const list = useQuery({
+    queryKey: ['bb-batch', ids.join(',')],
+    queryFn: async () => {
+      if (ids.length === 0) return [];
+      const { data, error } = await supabase
+        .from('characters').select('id,name').in('id', ids);
+      if (error) throw error;
+      return data as unknown as { id: string; name: string }[];
+    },
+    enabled: ids.length > 0,
+  });
+  const byId = new Map((list.data ?? []).map(c => [c.id, c.name]));
+  return (
+    <div>
+      <p className="label">🩸 Blood Bonds</p>
+      <div className="flex flex-wrap gap-2">
+        {bonds.map((b, i) => {
+          if (!b.character_id) return null;
+          return (
+            <Link key={i} to={`/characters/${b.character_id}`} className="chip hover:border-bloodlight transition">
+              {byId.get(b.character_id) ?? '...'}
+              <span className="text-rose ml-1">{'•'.repeat(b.level)}</span>
+            </Link>
+          );
+        })}
+      </div>
     </div>
   );
 }

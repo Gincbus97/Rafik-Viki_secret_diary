@@ -14,10 +14,11 @@ interface RelView extends Relationship {
 
 interface Props {
   characterId: string;
+  currentIsPc: boolean;
   filter: 'all' | 'pc' | 'npc';
 }
 
-export default function RelationshipsBlock({ characterId, filter }: Props) {
+export default function RelationshipsBlock({ characterId, currentIsPc, filter }: Props) {
   const qc = useQueryClient();
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
@@ -90,7 +91,8 @@ export default function RelationshipsBlock({ characterId, filter }: Props) {
         <RelationshipForm
           mode="new"
           fromCharacterId={characterId}
-          types={types.data ?? []}
+          fromIsPc={currentIsPc}
+          types={(types.data ?? []).filter(t => !t.hidden_from_manual)}
           characters={(characters.data ?? []).filter(c => c.id !== characterId)}
           createdBy={user?.id ?? null}
           onDone={() => {
@@ -129,7 +131,8 @@ export default function RelationshipsBlock({ characterId, filter }: Props) {
                         mode="edit"
                         existing={r}
                         fromCharacterId={r.from_character_id}
-                        types={types.data ?? []}
+                        fromIsPc={r.from?.is_pc ?? false}
+                        types={(types.data ?? []).filter(t => !t.hidden_from_manual || t.id === r.type_id)}
                         characters={(characters.data ?? []).filter(c => c.id !== r.from_character_id)}
                         createdBy={user?.id ?? null}
                         onDone={() => {
@@ -191,6 +194,7 @@ interface FormProps {
   mode: 'new' | 'edit';
   existing?: RelView;
   fromCharacterId: string;
+  fromIsPc: boolean;
   types: RelationshipType[];
   characters: Pick<Character,'id'|'name'|'is_pc'>[];
   createdBy: string | null;
@@ -198,7 +202,7 @@ interface FormProps {
   onCancel?: () => void;
 }
 
-function RelationshipForm({ mode, existing, fromCharacterId, types, characters, createdBy, onDone, onCancel }: FormProps) {
+function RelationshipForm({ mode, existing, fromCharacterId, fromIsPc, types, characters, createdBy, onDone, onCancel }: FormProps) {
   const [toId, setToId] = useState(existing?.to_character_id ?? '');
   const [typeId, setTypeId] = useState(existing?.type_id ?? types[0]?.id ?? '');
   const [desc, setDesc] = useState(existing?.description ?? '');
@@ -208,6 +212,10 @@ function RelationshipForm({ mode, existing, fromCharacterId, types, characters, 
   const [customType, setCustomType] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Описание обязательно если хотя бы одна сторона PC
+  const toChar = characters.find(c => c.id === toId);
+  const descRequired = fromIsPc || !!toChar?.is_pc;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -223,12 +231,11 @@ function RelationshipForm({ mode, existing, fromCharacterId, types, characters, 
           .single();
         if (error) throw error;
         usedTypeId = data.id;
-        // Добавим новый тип в локальный список, чтобы reciprocal-логика его видела
         typesList = [...types, data as RelationshipType];
       }
 
-      if (!desc.trim()) {
-        setErr('Опиши что это за связь — без описания нельзя.');
+      if (descRequired && !desc.trim()) {
+        setErr('Связь касается игрока — обязательно опиши, что между ними происходит.');
         setBusy(false);
         return;
       }
@@ -236,7 +243,7 @@ function RelationshipForm({ mode, existing, fromCharacterId, types, characters, 
         from_character_id: fromCharacterId,
         to_character_id: toId,
         type_id: usedTypeId,
-        description: desc.trim(),
+        description: desc.trim() || null,
         started_at_date: date || null,
         started_at_session: session ? parseInt(session) : null,
         strength,
@@ -289,11 +296,16 @@ function RelationshipForm({ mode, existing, fromCharacterId, types, characters, 
         </div>
       </div>
       <div>
-        <label className="label">Описание <span className="text-rose">*</span></label>
+        <label className="label">
+          Описание {descRequired && <span className="text-rose">*</span>}
+          {!descRequired && <span className="text-ash text-xs ml-1">(не обязательно — связь NPC↔NPC)</span>}
+        </label>
         <textarea
           className="input min-h-[60px]"
-          required
-          placeholder="Что именно происходит между этими двумя? Расскажи историю в одно-два предложения."
+          required={descRequired}
+          placeholder={descRequired
+            ? 'Связь касается игрока — опиши историю в одно-два предложения.'
+            : 'Можешь оставить пустым.'}
           value={desc}
           onChange={e => setDesc(e.target.value)}
         />
@@ -314,7 +326,7 @@ function RelationshipForm({ mode, existing, fromCharacterId, types, characters, 
       </div>
       {err && <p className="text-rose text-sm">{err}</p>}
       <div className="flex gap-2">
-        <button className="btn-primary text-sm" disabled={busy || !toId || !desc.trim()}>
+        <button className="btn-primary text-sm" disabled={busy || !toId || (descRequired && !desc.trim())}>
           {busy ? 'Сохраняем...' : (mode === 'new' ? 'Добавить связь' : 'Сохранить')}
         </button>
         {onCancel && (

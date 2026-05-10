@@ -7,6 +7,10 @@ export type LocationKind = 'haven' | 'elysium' | 'hunting_ground' | 'business' |
 export type QuestStatus = 'Active' | 'Completed' | 'Failed' | 'OnHold';
 
 // Kind-specific данные хранятся в JSONB-колонке kind_data
+export interface KindredData {
+  touchstones?: string[];            // character IDs — смертные якоря Humanity
+  blood_bonded_to?: { character_id: string; level: 1 | 2 | 3 }[];
+}
 export interface GhoulData {
   domitor_id?: string | null;       // ссылка на персонажа-домитора (Kindred)
   years_served?: number;
@@ -41,7 +45,7 @@ export interface Character {
   is_pc: boolean;
   kind: CreatureKind;
   life_status: LifeStatus;
-  kind_data: GhoulData | HumanData | OtherData | Record<string, unknown>;
+  kind_data: KindredData | GhoulData | HumanData | OtherData | Record<string, unknown>;
   portrait_url: string | null;
   clan: string | null;
   sect: Sect;
@@ -85,6 +89,10 @@ export interface RelationshipType {
   is_builtin: boolean;
   description: string | null;
   category: RelationshipCategory;
+  color: string;
+  dashed: boolean;
+  thickness: number;
+  hidden_from_manual: boolean;
 }
 
 // Двунаправленные пары связей: A→B одного типа подразумевает B→A другого.
