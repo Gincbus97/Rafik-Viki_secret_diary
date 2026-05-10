@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ReactFlow, Background, Controls, MiniMap,
   type Node, type Edge,
@@ -10,17 +10,23 @@ import {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { supabase } from '@/lib/supabase';
-import { CLANS, type Character, type Relationship, type RelationshipType, type Faction } from '@/lib/types';
+import { CLANS, type Character, type Relationship, type Faction } from '@/lib/types';
 
 interface RelEdge extends Relationship {
   type?: { id: string; name: string };
 }
 
-// Кастомный узел персонажа (готическая карточка)
-function CharacterNode({ data }: { data: { name: string; is_pc: boolean; clan: string | null; portrait_url: string | null; selected?: boolean } }) {
+type CharMM = Pick<Character,'id'|'name'|'is_pc'|'kind'|'clan'|'sect'|'portrait_url'|'mindmap_x'|'mindmap_y'>;
+
+// Кастомный узел
+function CharacterNode({ data }: { data: { name: string; is_pc: boolean; kind: string | null; clan: string | null; portrait_url: string | null; selected?: boolean } }) {
   const ring = data.selected ? 'ring-2 ring-rose ring-offset-2 ring-offset-ink' : '';
+  const borderColor =
+    data.kind === 'ghoul' ? 'border-rose/60' :
+    data.kind === 'human' ? 'border-moon/40' :
+    data.is_pc ? 'border-blood/60' : 'border-gold/30';
   return (
-    <div className={`bg-crypt border ${data.is_pc ? 'border-blood/60' : 'border-gold/30'} rounded-xl shadow-crypt px-3 py-2 min-w-[140px] ${ring}`}>
+    <div className={`bg-crypt border ${borderColor} rounded-xl shadow-crypt px-3 py-2 min-w-[140px] ${ring}`}>
       <Handle type="target" position={Position.Top}    style={{ background: '#8a0e1a' }} />
       <Handle type="source" position={Position.Bottom} style={{ background: '#8a0e1a' }} />
       <div className="flex items-center gap-2">
@@ -34,7 +40,9 @@ function CharacterNode({ data }: { data: { name: string; is_pc: boolean; clan: s
         <div className="min-w-0">
           <div className="font-display text-sm leading-tight truncate text-bone">{data.name}</div>
           <div className="text-[10px] text-ash leading-tight truncate">
-            {data.is_pc ? 'PC' : 'NPC'}{data.clan ? ` · ${data.clan}` : ''}
+            {data.is_pc ? 'PC' : 'NPC'}
+            {data.kind && data.kind !== 'kindred' ? ` · ${data.kind}` : ''}
+            {data.clan ? ` · ${data.clan}` : ''}
           </div>
         </div>
       </div>
@@ -48,14 +56,17 @@ type FilterFocus = 'all' | 'pc' | 'one';
 
 export default function MindMap() {
   const nav = useNavigate();
+  const qc = useQueryClient();
 
   const characters = useQuery({
     queryKey: ['mm-characters'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('characters').select('id,name,is_pc,clan,sect,portrait_url').order('name');
+        .from('characters')
+        .select('id,name,is_pc,kind,clan,sect,portrait_url,mindmap_x,mindmap_y')
+        .order('name');
       if (error) throw error;
-      return data as unknown as Pick<Character,'id'|'name'|'is_pc'|'clan'|'sect'|'portrait_url'>[];
+      return data as unknown as CharMM[];
     },
   });
 
@@ -90,7 +101,7 @@ export default function MindMap() {
     },
   });
 
-  // ----- Фильтры -----
+  // Фильтры
   const [showPcOnly, setShowPcOnly] = useState(false);
   const [clanFilter, setClanFilter] = useState<string>('');
   const [factionFilter, setFactionFilter] = useState<string>('');
@@ -98,22 +109,18 @@ export default function MindMap() {
   const [focusMode, setFocusMode] = useState<FilterFocus>('all');
   const [focusId, setFocusId] = useState<string>('');
   const [hops, setHops] = useState<number>(1);
+  const [lockPositions, setLockPositions] = useState(true);
 
-  // Сет id персонажей в выбранной фракции
   const charactersInFaction = useMemo(() => {
     if (!factionFilter || !factionMembers.data) return null;
-    const set = new Set(
-      factionMembers.data.filter(m => m.faction_id === factionFilter).map(m => m.character_id)
-    );
-    return set;
+    return new Set(factionMembers.data.filter(m => m.faction_id === factionFilter).map(m => m.character_id));
   }, [factionFilter, factionMembers.data]);
 
-  // Граф: считаем какие узлы видны
-  const { nodes, edges } = useMemo(() => {
+  // ----- Считаем видимые узлы и грани -----
+  const computed = useMemo(() => {
     if (!characters.data || !relationships.data) return { nodes: [] as Node[], edges: [] as Edge[] };
 
     const visibleChars = new Set<string>();
-
     for (const c of characters.data) {
       if (showPcOnly && !c.is_pc) continue;
       if (clanFilter && c.clan !== clanFilter) continue;
@@ -121,7 +128,6 @@ export default function MindMap() {
       visibleChars.add(c.id);
     }
 
-    // Focus mode: оставляем только выбранного и его соседей в радиусе hops
     if (focusMode === 'one' && focusId) {
       const reachable = new Set<string>([focusId]);
       const adj = new Map<string, Set<string>>();
@@ -141,39 +147,45 @@ export default function MindMap() {
         }
         frontier = next;
       }
-      // пересечение с visibleChars
       for (const id of [...visibleChars]) if (!reachable.has(id)) visibleChars.delete(id);
-      reachable.forEach(id => visibleChars.add(id)); // и добавим тех, кого фильтры скрыли но они часть подграфа
+      reachable.forEach(id => visibleChars.add(id));
     }
 
-    // Расположим узлы по кругу + центр для focus
+    // Готовим позиции: stored из БД, для остальных — fallback на круг
     const ids = [...visibleChars];
-    const positions = new Map<string, { x: number; y: number }>();
+    const charById = new Map(characters.data.map(c => [c.id, c]));
+    const fallback = new Map<string, { x: number; y: number }>();
     const N = ids.length;
     if (focusMode === 'one' && focusId && visibleChars.has(focusId)) {
-      positions.set(focusId, { x: 0, y: 0 });
+      fallback.set(focusId, { x: 0, y: 0 });
       const others = ids.filter(i => i !== focusId);
       others.forEach((id, idx) => {
         const a = (idx / Math.max(others.length, 1)) * Math.PI * 2;
         const r = 280;
-        positions.set(id, { x: Math.cos(a) * r, y: Math.sin(a) * r });
+        fallback.set(id, { x: Math.cos(a) * r, y: Math.sin(a) * r });
       });
     } else {
       ids.forEach((id, idx) => {
         const a = (idx / Math.max(N, 1)) * Math.PI * 2;
         const r = 60 + Math.min(420, N * 14);
-        positions.set(id, { x: Math.cos(a) * r, y: Math.sin(a) * r });
+        fallback.set(id, { x: Math.cos(a) * r, y: Math.sin(a) * r });
       });
     }
 
     const nodes: Node[] = ids.map(id => {
-      const c = characters.data!.find(c => c.id === id)!;
-      const pos = positions.get(id) ?? { x: 0, y: 0 };
+      const c = charById.get(id)!;
+      const stored = (typeof c.mindmap_x === 'number' && typeof c.mindmap_y === 'number')
+        ? { x: c.mindmap_x, y: c.mindmap_y }
+        : fallback.get(id)!;
       return {
         id,
-        position: pos,
+        position: stored,
         type: 'character',
-        data: { name: c.name, is_pc: c.is_pc, clan: c.clan, portrait_url: c.portrait_url, selected: focusId === id },
+        draggable: !lockPositions,
+        data: {
+          name: c.name, is_pc: c.is_pc, kind: c.kind, clan: c.clan,
+          portrait_url: c.portrait_url, selected: focusId === id,
+        },
       };
     });
 
@@ -197,12 +209,26 @@ export default function MindMap() {
       }));
 
     return { nodes, edges };
-  }, [characters.data, relationships.data, showPcOnly, clanFilter, charactersInFaction, focusMode, focusId, hops, minStrength]);
+  }, [characters.data, relationships.data, showPcOnly, clanFilter, charactersInFaction, focusMode, focusId, hops, minStrength, lockPositions]);
 
+  // Передаём в react-flow и синхронизируем при смене фильтров.
+  // ВАЖНО: ключом считаем "набор id + версия позиций", чтобы локальные drag-движения
+  // не сбрасывались на каждом ре-рендере родителя.
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);
-  useEffect(() => { setRfNodes(nodes); }, [nodes, setRfNodes]);
-  useEffect(() => { setRfEdges(edges); }, [edges, setRfEdges]);
+
+  // sig — хэш видимого набора + позиций (стабилен между рендерами с теми же данными)
+  const sig = useMemo(() => {
+    return computed.nodes.map(n => `${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${(n.data as any)?.selected ? 1 : 0}`).join('|') + '#' + computed.edges.length + '#' + (lockPositions ? 'L' : 'F');
+  }, [computed, lockPositions]);
+  const lastSig = useRef('');
+  useEffect(() => {
+    if (sig !== lastSig.current) {
+      setRfNodes(computed.nodes);
+      setRfEdges(computed.edges);
+      lastSig.current = sig;
+    }
+  }, [sig, computed, setRfNodes, setRfEdges]);
 
   const onNodeClick = useCallback((_: any, node: Node) => {
     if (focusMode === 'one') {
@@ -212,12 +238,42 @@ export default function MindMap() {
     }
   }, [focusMode, nav]);
 
+  const onNodeDragStop = useCallback(async (_: any, node: Node) => {
+    const { error } = await supabase
+      .from('characters')
+      .update({ mindmap_x: node.position.x, mindmap_y: node.position.y } as any)
+      .eq('id', node.id);
+    if (!error) {
+      // мягкое обновление кэша без resyncing rfNodes (сигнатура совпадёт после refetch)
+      qc.setQueryData<CharMM[]>(['mm-characters'], (old) =>
+        old?.map(c => c.id === node.id ? { ...c, mindmap_x: node.position.x, mindmap_y: node.position.y } : c) ?? old
+      );
+    }
+  }, [qc]);
+
+  // Сбросить все позиции (вернуться к авто-раскладке)
+  const resetPositions = useCallback(async () => {
+    if (!confirm('Сбросить все сохранённые позиции узлов?')) return;
+    const ids = (characters.data ?? []).map(c => c.id);
+    if (ids.length === 0) return;
+    const { error } = await supabase
+      .from('characters')
+      .update({ mindmap_x: null, mindmap_y: null } as any)
+      .in('id', ids);
+    if (!error) {
+      qc.invalidateQueries({ queryKey: ['mm-characters'] });
+    }
+  }, [characters.data, qc]);
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="heading">🕸 Карта связей</h1>
         <p className="subtle text-sm">
-          Клик по узлу{focusMode === 'one' ? ' — фокус на персонаже' : ' — открыть досье'}
+          {focusMode === 'one'
+            ? 'Клик по узлу — перецентровать фокус'
+            : (lockPositions ? 'Узлы зафиксированы. Нажми «🔓» чтобы перетащить.' : 'Перетаскивай узлы — позиции сохраняются автоматически.')
+          }
         </p>
       </div>
 
@@ -279,6 +335,20 @@ export default function MindMap() {
             </div>
           </>
         )}
+
+        <div className="ml-auto flex gap-2">
+          <button
+            type="button"
+            onClick={() => setLockPositions(l => !l)}
+            className={`btn-ghost text-sm ${lockPositions ? '' : 'border-blood/40 text-rose'}`}
+            title={lockPositions ? 'Разблокировать перетаскивание' : 'Зафиксировать позиции'}
+          >
+            {lockPositions ? '🔒 Заблокировано' : '🔓 Можно тащить'}
+          </button>
+          <button type="button" onClick={resetPositions} className="btn-ghost text-sm" title="Сбросить позиции">
+            ↻ Авто-раскладка
+          </button>
+        </div>
       </div>
 
       <div className="card p-0 overflow-hidden" style={{ height: 'calc(100vh - 320px)', minHeight: 480 }}>
@@ -293,6 +363,8 @@ export default function MindMap() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onNodeClick={onNodeClick}
+            onNodeDragStop={onNodeDragStop}
+            nodesDraggable={!lockPositions}
             nodeTypes={nodeTypes}
             connectionMode={ConnectionMode.Loose}
             fitView
@@ -318,7 +390,7 @@ export default function MindMap() {
 
 function edgeColor(typeName: string): string {
   const t = typeName.toLowerCase();
-  if (t.startsWith('sire') || t === 'childe')        return '#c0233a'; // кровные узы
+  if (t.startsWith('sire') || t === 'childe')        return '#c0233a';
   if (t.startsWith('blood bond'))                     return '#8a0e1a';
   if (t === 'ghoul')                                  return '#d8536e';
   if (t === 'lover')                                  return '#d8536e';

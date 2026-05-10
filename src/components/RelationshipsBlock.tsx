@@ -20,6 +20,7 @@ export default function RelationshipsBlock({ characterId, filter }: Props) {
   const qc = useQueryClient();
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const rels = useQuery({
     queryKey: ['rels', characterId],
@@ -68,6 +69,7 @@ export default function RelationshipsBlock({ characterId, filter }: Props) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['rels', characterId] });
+      qc.invalidateQueries({ queryKey: ['mm-relationships'] });
     },
   });
 
@@ -80,18 +82,20 @@ export default function RelationshipsBlock({ characterId, filter }: Props) {
 
   return (
     <div className="space-y-3">
-      <button onClick={() => setOpen(o => !o)} className="btn-ghost text-sm">
+      <button onClick={() => { setOpen(o => !o); setEditingId(null); }} className="btn-ghost text-sm">
         {open ? '× Скрыть форму' : '+ Добавить связь'}
       </button>
 
       {open && (
-        <NewRelationshipForm
+        <RelationshipForm
+          mode="new"
           fromCharacterId={characterId}
           types={types.data ?? []}
           characters={(characters.data ?? []).filter(c => c.id !== characterId)}
           createdBy={user?.id ?? null}
-          onCreated={() => {
+          onDone={() => {
             qc.invalidateQueries({ queryKey: ['rels', characterId] });
+            qc.invalidateQueries({ queryKey: ['mm-relationships'] });
             setOpen(false);
           }}
         />
@@ -116,37 +120,63 @@ export default function RelationshipsBlock({ characterId, filter }: Props) {
               const outgoing = r.from_character_id === characterId;
               const other = outgoing ? r.to : r.from;
               if (!other) return null;
+              const isEditing = editingId === r.id;
               return (
-                <tr key={r.id} className="border-t border-gold/10">
-                  <td className="py-2 align-top">
-                    <span className="text-ash">
-                      {outgoing ? '→' : '←'}
-                    </span>{' '}
-                    <Link to={`/characters/${other.id}`} className="link">{other.name}</Link>{' '}
-                    <span className={`chip ${other.is_pc ? 'chip-pc' : 'chip-npc'} ml-1`}>
-                      {other.is_pc ? 'PC' : 'NPC'}
-                    </span>
-                  </td>
-                  <td className="py-2 align-top">
-                    <span className="chip">{r.type?.name}</span>
-                  </td>
-                  <td className="py-2 align-top">
-                    <p className="text-bone/90 whitespace-pre-wrap">{r.description ?? '—'}</p>
-                    {(r.started_at_date || r.started_at_session) && (
-                      <p className="text-xs text-ash mt-1">
-                        {r.started_at_date && <>📅 {r.started_at_date} </>}
-                        {r.started_at_session && <>· сессия #{r.started_at_session}</>}
-                      </p>
-                    )}
-                  </td>
-                  <td className="py-2 align-top text-right">
-                    <button
-                      onClick={() => { if (confirm('Удалить связь?')) del.mutate(r.id); }}
-                      className="text-rose hover:text-bloodlight text-xs"
-                    >
-                      ×
-                    </button>
-                  </td>
+                <tr key={r.id} className="border-t border-gold/10 align-top">
+                  {isEditing ? (
+                    <td colSpan={4} className="py-2">
+                      <RelationshipForm
+                        mode="edit"
+                        existing={r}
+                        fromCharacterId={r.from_character_id}
+                        types={types.data ?? []}
+                        characters={(characters.data ?? []).filter(c => c.id !== r.from_character_id)}
+                        createdBy={user?.id ?? null}
+                        onDone={() => {
+                          qc.invalidateQueries({ queryKey: ['rels', characterId] });
+                          qc.invalidateQueries({ queryKey: ['mm-relationships'] });
+                          setEditingId(null);
+                        }}
+                        onCancel={() => setEditingId(null)}
+                      />
+                    </td>
+                  ) : (
+                    <>
+                      <td className="py-2">
+                        <span className="text-ash">{outgoing ? '→' : '←'}</span>{' '}
+                        <Link to={`/characters/${other.id}`} className="link">{other.name}</Link>{' '}
+                        <span className={`chip ${other.is_pc ? 'chip-pc' : 'chip-npc'} ml-1`}>
+                          {other.is_pc ? 'PC' : 'NPC'}
+                        </span>
+                      </td>
+                      <td className="py-2"><span className="chip">{r.type?.name}</span></td>
+                      <td className="py-2">
+                        <p className="text-bone/90 whitespace-pre-wrap">{r.description ?? '—'}</p>
+                        {(r.started_at_date || r.started_at_session) && (
+                          <p className="text-xs text-ash mt-1">
+                            {r.started_at_date && <>📅 {r.started_at_date} </>}
+                            {r.started_at_session && <>· сессия #{r.started_at_session}</>}
+                          </p>
+                        )}
+                      </td>
+                      <td className="py-2 text-right whitespace-nowrap">
+                        <button
+                          onClick={() => setEditingId(r.id)}
+                          className="text-ash hover:text-bone text-sm mr-2"
+                          title="Редактировать"
+                        >
+                          ✎
+                        </button>
+                        <button
+                          onClick={() => { if (confirm('Удалить связь?')) del.mutate(r.id); }}
+                          className="text-rose hover:text-bloodlight text-sm"
+                          title="Удалить"
+                        >
+                          ×
+                        </button>
+                      </td>
+                    </>
+                  )}
                 </tr>
               );
             })}
@@ -157,21 +187,24 @@ export default function RelationshipsBlock({ characterId, filter }: Props) {
   );
 }
 
-function NewRelationshipForm({
-  fromCharacterId, types, characters, createdBy, onCreated,
-}: {
+interface FormProps {
+  mode: 'new' | 'edit';
+  existing?: RelView;
   fromCharacterId: string;
   types: RelationshipType[];
   characters: Pick<Character,'id'|'name'|'is_pc'>[];
   createdBy: string | null;
-  onCreated: () => void;
-}) {
-  const [toId, setToId] = useState('');
-  const [typeId, setTypeId] = useState(types[0]?.id ?? '');
-  const [desc, setDesc] = useState('');
-  const [date, setDate] = useState('');
-  const [session, setSession] = useState('');
-  const [strength, setStrength] = useState(3);
+  onDone: () => void;
+  onCancel?: () => void;
+}
+
+function RelationshipForm({ mode, existing, fromCharacterId, types, characters, createdBy, onDone, onCancel }: FormProps) {
+  const [toId, setToId] = useState(existing?.to_character_id ?? '');
+  const [typeId, setTypeId] = useState(existing?.type_id ?? types[0]?.id ?? '');
+  const [desc, setDesc] = useState(existing?.description ?? '');
+  const [date, setDate] = useState(existing?.started_at_date ?? '');
+  const [session, setSession] = useState(existing?.started_at_session?.toString() ?? '');
+  const [strength, setStrength] = useState(existing?.strength ?? 3);
   const [customType, setCustomType] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -190,7 +223,8 @@ function NewRelationshipForm({
         if (error) throw error;
         usedTypeId = data.id;
       }
-      const { error } = await supabase.from('relationships').insert({
+
+      const payload = {
         from_character_id: fromCharacterId,
         to_character_id: toId,
         type_id: usedTypeId,
@@ -198,12 +232,23 @@ function NewRelationshipForm({
         started_at_date: date || null,
         started_at_session: session ? parseInt(session) : null,
         strength,
-        created_by: createdBy,
-      });
-      if (error) throw error;
-      onCreated();
+      };
+
+      if (mode === 'new') {
+        const { error } = await supabase
+          .from('relationships')
+          .insert({ ...payload, created_by: createdBy });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('relationships')
+          .update(payload)
+          .eq('id', existing!.id);
+        if (error) throw error;
+      }
+      onDone();
     } catch (e: any) {
-      setErr(e?.message ?? 'Не удалось добавить связь');
+      setErr(e?.message ?? 'Не удалось сохранить связь');
     } finally {
       setBusy(false);
     }
@@ -241,7 +286,7 @@ function NewRelationshipForm({
       <div className="grid grid-cols-3 gap-3">
         <div>
           <label className="label">Дата</label>
-          <input type="date" className="input" value={date} onChange={e => setDate(e.target.value)} />
+          <input type="date" className="input" value={date ?? ''} onChange={e => setDate(e.target.value)} />
         </div>
         <div>
           <label className="label">Сессия №</label>
@@ -253,9 +298,14 @@ function NewRelationshipForm({
         </div>
       </div>
       {err && <p className="text-rose text-sm">{err}</p>}
-      <button className="btn-primary text-sm" disabled={busy || !toId}>
-        {busy ? 'Соединяем...' : 'Добавить связь'}
-      </button>
+      <div className="flex gap-2">
+        <button className="btn-primary text-sm" disabled={busy || !toId}>
+          {busy ? 'Сохраняем...' : (mode === 'new' ? 'Добавить связь' : 'Сохранить')}
+        </button>
+        {onCancel && (
+          <button type="button" onClick={onCancel} className="btn-ghost text-sm">Отмена</button>
+        )}
+      </div>
     </form>
   );
 }

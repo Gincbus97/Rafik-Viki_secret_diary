@@ -4,13 +4,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import {
-  CLANS, SECTS, PREDATOR_TYPES, DEFAULT_DISCIPLINES,
-  type Character, type Discipline, type Sect, type LocationItem,
+  CLANS, SECTS, PREDATOR_TYPES, DEFAULT_DISCIPLINES, CREATURE_KINDS,
+  type Character, type Discipline, type LocationItem, type CreatureKind,
 } from '@/lib/types';
 import Slider from '@/components/Slider';
 
 const EMPTY: Partial<Character> = {
-  name: '', is_pc: false, portrait_url: '', clan: '', sect: 'Unknown',
+  name: '', is_pc: false, kind: 'kindred', portrait_url: '', clan: '', sect: 'Unknown',
   generation: null, sire_id: null, embrace_age: '', status_in_sect: '',
   location_id: null, short_desc: '', biography: '',
   disciplines: [], humanity: 7, hunger: 1, reputation: 0,
@@ -127,7 +127,7 @@ export default function CharacterEdit({ mode }: Props) {
       <h1 className="heading">{mode === 'new' ? '🦇 Новый персонаж' : `✒️ ${form.name || 'Редактирование'}`}</h1>
 
       <section className="card space-y-4">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-4">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -137,6 +137,20 @@ export default function CharacterEdit({ mode }: Props) {
             />
             <span className="text-bone">Игровой персонаж (PC)</span>
           </label>
+          <div className="flex gap-1 bg-velvet/40 p-1 rounded-lg">
+            {CREATURE_KINDS.map(k => (
+              <button
+                key={k.value}
+                type="button"
+                onClick={() => set('kind', k.value as CreatureKind)}
+                className={`px-3 py-1 text-sm rounded transition ${
+                  form.kind === k.value ? 'bg-blood text-bone' : 'text-ash hover:text-bone'
+                }`}
+              >
+                {k.emoji} {k.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="grid md:grid-cols-2 gap-4">
@@ -163,9 +177,16 @@ export default function CharacterEdit({ mode }: Props) {
           </div>
           <div>
             <label className="label">Секта</label>
-            <select className="input" value={form.sect ?? 'Unknown'} onChange={e => set('sect', e.target.value as Sect)}>
-              {SECTS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <input
+              className="input"
+              list="sects-list"
+              placeholder="Camarilla / Anarch / своё..."
+              value={form.sect ?? ''}
+              onChange={e => set('sect', e.target.value)}
+            />
+            <datalist id="sects-list">
+              {SECTS.map(s => <option key={s} value={s} />)}
+            </datalist>
           </div>
           <div>
             <label className="label">Поколение</label>

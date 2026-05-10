@@ -1,4 +1,6 @@
-export type Sect = 'Camarilla' | 'Anarch' | 'Sabbat' | 'Independent' | 'Autarkis' | 'Unknown';
+// Секта теперь свободный текст; ниже SECTS — список преднастроенных.
+export type Sect = string;
+export type CreatureKind = 'kindred' | 'ghoul' | 'human' | 'other';
 export type FactionKind = 'sect' | 'coterie' | 'cult' | 'package' | 'other';
 export type LocationKind = 'haven' | 'elysium' | 'hunting_ground' | 'business' | 'other';
 export type QuestStatus = 'Active' | 'Completed' | 'Failed' | 'OnHold';
@@ -17,6 +19,7 @@ export interface Character {
   id: string;
   name: string;
   is_pc: boolean;
+  kind: CreatureKind;
   portrait_url: string | null;
   clan: string | null;
   sect: Sect;
@@ -39,6 +42,8 @@ export interface Character {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  mindmap_x: number | null;
+  mindmap_y: number | null;
 }
 
 export interface RelationshipType {
@@ -127,7 +132,21 @@ export const CLANS = [
   'Caitiff','Thin-blood',
 ] as const;
 
-export const SECTS: Sect[] = ['Camarilla','Anarch','Sabbat','Independent','Autarkis','Unknown'];
+export const SECTS = ['Camarilla','Anarch','Sabbat','Independent','Autarkis','Unknown'] as const;
+
+export const CREATURE_KINDS: { value: CreatureKind; label: string; emoji: string }[] = [
+  { value: 'kindred', label: 'Kindred (Vampire)', emoji: '🧛' },
+  { value: 'ghoul',   label: 'Ghoul',             emoji: '🩸' },
+  { value: 'human',   label: 'Human',             emoji: '👤' },
+  { value: 'other',   label: 'Other',             emoji: '✨' },
+];
+
+export const KIND_SHORT: Record<CreatureKind, string> = {
+  kindred: 'Vampire',
+  ghoul:   'Ghoul',
+  human:   'Human',
+  other:   'Other',
+};
 
 export const PREDATOR_TYPES = [
   'Alleycat','Bagger','Blood Leech','Cleaver','Consensualist','Farmer',

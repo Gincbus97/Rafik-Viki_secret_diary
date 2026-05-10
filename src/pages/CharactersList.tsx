@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { CLANS, SECTS, type Character } from '@/lib/types';
+import { CLANS, SECTS, CREATURE_KINDS, KIND_SHORT, type Character, type CreatureKind } from '@/lib/types';
 import Avatar from '@/components/Avatar';
 
 type Filter = 'all' | 'pc' | 'npc';
@@ -10,14 +10,15 @@ type Filter = 'all' | 'pc' | 'npc';
 async function fetchCharacters() {
   const { data, error } = await supabase
     .from('characters')
-    .select('id,name,is_pc,clan,sect,portrait_url,short_desc,humanity,hunger')
+    .select('id,name,is_pc,kind,clan,sect,portrait_url,short_desc,humanity,hunger')
     .order('name');
   if (error) throw error;
-  return data as Character[];
+  return data as unknown as Character[];
 }
 
 export default function CharactersList() {
   const [filter, setFilter] = useState<Filter>('all');
+  const [kindFilter, setKindFilter] = useState<CreatureKind | ''>('');
   const [clan, setClan] = useState<string>('');
   const [sect, setSect] = useState<string>('');
   const [q, setQ]       = useState<string>('');
@@ -29,12 +30,13 @@ export default function CharactersList() {
     return data.filter(c => {
       if (filter === 'pc'  && !c.is_pc) return false;
       if (filter === 'npc' &&  c.is_pc) return false;
+      if (kindFilter && c.kind !== kindFilter) return false;
       if (clan && c.clan !== clan) return false;
       if (sect && c.sect !== sect) return false;
       if (q && !c.name.toLowerCase().includes(q.toLowerCase())) return false;
       return true;
     });
-  }, [data, filter, clan, sect, q]);
+  }, [data, filter, kindFilter, clan, sect, q]);
 
   return (
     <div className="space-y-4">
@@ -56,6 +58,14 @@ export default function CharactersList() {
               {f === 'all' ? 'Все' : f.toUpperCase()}
             </button>
           ))}
+        </div>
+
+        <div>
+          <label className="label">Тип</label>
+          <select className="input" value={kindFilter} onChange={e => setKindFilter(e.target.value as CreatureKind | '')}>
+            <option value="">— любой —</option>
+            {CREATURE_KINDS.map(k => <option key={k.value} value={k.value}>{k.emoji} {k.label}</option>)}
+          </select>
         </div>
 
         <div>
@@ -97,6 +107,9 @@ export default function CharactersList() {
                   <span className={`chip ${c.is_pc ? 'chip-pc' : 'chip-npc'}`}>
                     {c.is_pc ? 'PC' : 'NPC'}
                   </span>
+                  {c.kind && c.kind !== 'kindred' && (
+                    <span className="chip">{KIND_SHORT[c.kind]}</span>
+                  )}
                 </div>
                 <p className="subtle text-xs">
                   {c.clan ?? '—'}{c.sect && c.sect !== 'Unknown' ? ` · ${c.sect}` : ''}

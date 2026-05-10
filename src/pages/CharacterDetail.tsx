@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import type { Character, Quest, Faction, LocationItem } from '@/lib/types';
+import { KIND_SHORT, type Character, type Quest, type Faction, type LocationItem } from '@/lib/types';
 import Avatar from '@/components/Avatar';
 import RelationshipsBlock from '@/components/RelationshipsBlock';
 import PersonalNoteBlock from '@/components/PersonalNoteBlock';
@@ -96,6 +96,7 @@ export default function CharacterDetail() {
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="heading">{c.name}</h1>
             <span className={`chip ${c.is_pc ? 'chip-pc' : 'chip-npc'}`}>{c.is_pc ? 'PC' : 'NPC'}</span>
+            {c.kind && c.kind !== 'kindred' && <span className="chip">{KIND_SHORT[c.kind]}</span>}
           </div>
           <div className="subtle text-sm mt-1 flex flex-wrap gap-x-3 gap-y-1">
             {c.clan && <span>Клан: <span className="text-bone">{c.clan}</span></span>}
@@ -114,10 +115,10 @@ export default function CharacterDetail() {
 
           {c.short_desc && <p className="mt-3 text-bone/90">{c.short_desc}</p>}
 
-          <div className="grid grid-cols-3 gap-3 mt-4">
-            <Stat label="Humanity"  value={c.humanity}   max={10} />
-            <Stat label="Hunger"    value={c.hunger}     max={5}  />
-            <Stat label="Известность" value={c.reputation} max={10} />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
+            <LiveStat field="humanity"   characterId={c.id} label="Humanity" initial={c.humanity}   max={10} />
+            <LiveStat field="hunger"     characterId={c.id} label="Hunger"   initial={c.hunger}     max={5}  />
+            <LiveStat field="reputation" characterId={c.id} label="Fame"     initial={c.reputation} max={10} />
           </div>
 
           <div className="flex gap-2 mt-4">
@@ -236,17 +237,64 @@ export default function CharacterDetail() {
   );
 }
 
-function Stat({ label, value, max }: { label: string; value: number; max: number }) {
-  const pct = Math.max(0, Math.min(1, value / max)) * 100;
+// Inline-слайдер с автосохранением (debounce 350ms)
+function LiveStat({
+  characterId, field, label, initial, max,
+}: {
+  characterId: string;
+  field: 'humanity' | 'hunger' | 'reputation';
+  label: string;
+  initial: number;
+  max: number;
+}) {
+  const qc = useQueryClient();
+  const [value, setValue] = useState(initial);
+  const [saved, setSaved] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => { setValue(initial); }, [initial]);
+
+  function onChange(v: number) {
+    setValue(v);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(async () => {
+      const { error } = await supabase
+        .from('characters')
+        .update({ [field]: v } as any)
+        .eq('id', characterId);
+      if (!error) {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 800);
+        qc.invalidateQueries({ queryKey: ['character', characterId] });
+        qc.invalidateQueries({ queryKey: ['characters'] });
+        qc.invalidateQueries({ queryKey: ['dash-chars'] });
+      }
+    }, 350);
+  }
+
+  const pct = (value / max) * 100;
+  const trackStyle = {
+    background: `linear-gradient(to right, #c0233a 0%, #8a0e1a ${pct}%, #1d1014 ${pct}%, #1d1014 100%)`,
+  };
+
   return (
     <div className="bg-velvet/50 rounded-lg px-3 py-2 border border-gold/10">
       <div className="flex items-center justify-between text-xs">
         <span className="text-ash uppercase tracking-widest">{label}</span>
-        <span className="text-bone font-display text-base">{value}/{max}</span>
+        <span className="text-bone font-display text-base flex items-center gap-1">
+          {value}<span className="text-ash">/{max}</span>
+          {saved && <span className="text-rose text-xs ml-1">✓</span>}
+        </span>
       </div>
-      <div className="mt-1 h-1.5 bg-ink rounded-full overflow-hidden">
-        <div className="h-full bg-blood" style={{ width: `${pct}%` }} />
-      </div>
+      <input
+        type="range"
+        min={0}
+        max={max}
+        value={value}
+        onChange={e => onChange(parseInt(e.target.value))}
+        style={trackStyle}
+        className="mt-1"
+      />
     </div>
   );
 }
