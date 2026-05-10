@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
+import { createRelWithReciprocal, updateRelWithReciprocal, deleteRelWithReciprocal } from '@/lib/relationships';
 import type { Character, Relationship, RelationshipType } from '@/lib/types';
 
 interface RelView extends Relationship {
@@ -64,11 +65,10 @@ export default function RelationshipsBlock({ characterId, filter }: Props) {
 
   const del = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('relationships').delete().eq('id', id);
-      if (error) throw error;
+      await deleteRelWithReciprocal(id, types.data ?? []);
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['rels', characterId] });
+      qc.invalidateQueries({ queryKey: ['rels'] });
       qc.invalidateQueries({ queryKey: ['mm-relationships'] });
     },
   });
@@ -214,14 +214,17 @@ function RelationshipForm({ mode, existing, fromCharacterId, types, characters, 
     setErr(null); setBusy(true);
     try {
       let usedTypeId = typeId;
+      let typesList = types;
       if (customType.trim()) {
         const { data, error } = await supabase
           .from('relationship_types')
-          .insert({ name: customType.trim(), is_builtin: false })
-          .select('id')
+          .insert({ name: customType.trim(), is_builtin: false, category: 'personal' })
+          .select('*')
           .single();
         if (error) throw error;
         usedTypeId = data.id;
+        // Добавим новый тип в локальный список, чтобы reciprocal-логика его видела
+        typesList = [...types, data as RelationshipType];
       }
 
       const payload = {
@@ -235,16 +238,9 @@ function RelationshipForm({ mode, existing, fromCharacterId, types, characters, 
       };
 
       if (mode === 'new') {
-        const { error } = await supabase
-          .from('relationships')
-          .insert({ ...payload, created_by: createdBy });
-        if (error) throw error;
+        await createRelWithReciprocal({ ...payload, created_by: createdBy }, typesList);
       } else {
-        const { error } = await supabase
-          .from('relationships')
-          .update(payload)
-          .eq('id', existing!.id);
-        if (error) throw error;
+        await updateRelWithReciprocal(existing!.id, payload, typesList);
       }
       onDone();
     } catch (e: any) {

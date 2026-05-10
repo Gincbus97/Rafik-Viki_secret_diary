@@ -1,9 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import { KIND_SHORT, type Character, type Quest, type Faction, type LocationItem } from '@/lib/types';
+import {
+  KIND_SHORT, LIFE_STATUSES,
+  type Character, type Quest, type Faction, type LocationItem,
+  type GhoulData, type HumanData, type OtherData,
+} from '@/lib/types';
 import Avatar from '@/components/Avatar';
 import RelationshipsBlock from '@/components/RelationshipsBlock';
 import PersonalNoteBlock from '@/components/PersonalNoteBlock';
@@ -37,6 +41,20 @@ export default function CharacterDetail() {
       return data as unknown as { id: string; name: string } | null;
     },
     enabled: !!character.data?.sire_id,
+  });
+
+  // Для гулей — домитор лежит в kind_data.domitor_id
+  const domitorId = (character.data?.kind_data as GhoulData | undefined)?.domitor_id ?? null;
+  const domitor = useQuery({
+    queryKey: ['character-domitor', domitorId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('characters').select('id,name')
+        .eq('id', domitorId!).maybeSingle();
+      if (error) throw error;
+      return data as unknown as { id: string; name: string } | null;
+    },
+    enabled: !!domitorId,
   });
 
   const location = useQuery({
@@ -79,6 +97,7 @@ export default function CharacterDetail() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['characters'] });
+      qc.invalidateQueries({ queryKey: ['mm-characters'] });
       nav('/characters');
     },
   });
@@ -87,26 +106,39 @@ export default function CharacterDetail() {
   if (character.isError || !character.data) return <p className="text-rose">Персонаж не найден.</p>;
 
   const c = character.data;
+  const status = LIFE_STATUSES.find(s => s.value === c.life_status) ?? LIFE_STATUSES[0];
 
   return (
     <div className="space-y-6">
-      <div className="card flex flex-col md:flex-row gap-6">
+      <div className={`card flex flex-col md:flex-row gap-6 ${
+        c.is_pc ? 'border-bone/40 ring-1 ring-bone/10' :
+        c.kind === 'human' ? 'border-sky-500/40' :
+        'border-blood/30'
+      }`}>
         <Avatar url={c.portrait_url} name={c.name} size={160} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="heading">{c.name}</h1>
             <span className={`chip ${c.is_pc ? 'chip-pc' : 'chip-npc'}`}>{c.is_pc ? 'PC' : 'NPC'}</span>
             {c.kind && c.kind !== 'kindred' && <span className="chip">{KIND_SHORT[c.kind]}</span>}
+            {c.life_status !== 'active' && (
+              <span className={`chip ${status.tone} border-current/40`}>
+                {status.emoji} {status.label}
+              </span>
+            )}
           </div>
+
           <div className="subtle text-sm mt-1 flex flex-wrap gap-x-3 gap-y-1">
-            {c.clan && <span>Клан: <span className="text-bone">{c.clan}</span></span>}
-            {c.sect && c.sect !== 'Unknown' && <span>Секта: <span className="text-bone">{c.sect}</span></span>}
+            {c.kind === 'kindred' && c.clan && <span>Клан: <span className="text-bone">{c.clan}</span></span>}
+            {c.kind === 'kindred' && c.sect && c.sect !== 'Unknown' && <span>Секта: <span className="text-bone">{c.sect}</span></span>}
             {c.kind === 'kindred' && c.generation && <span>{c.generation} поколение</span>}
             {c.kind === 'kindred' && c.embrace_age && <span>Embrace: <span className="text-bone">{c.embrace_age}</span></span>}
             {c.status_in_sect && <span>{c.is_pc ? 'Статус' : 'Роль'}: <span className="text-bone">{c.status_in_sect}</span></span>}
-            {c.kind === 'kindred' && c.predator_type && <span>Predator: <span className="text-bone">{c.predator_type}</span></span>}
             {sire.data && (
               <span>Sire: <Link className="link" to={`/characters/${sire.data.id}`}>{sire.data.name}</Link></span>
+            )}
+            {domitor.data && (
+              <span>Домитор: <Link className="link" to={`/characters/${domitor.data.id}`}>{domitor.data.name}</Link></span>
             )}
             {location.data && (
               <span>Локация: <span className="text-bone">{location.data.name}</span></span>
@@ -114,20 +146,6 @@ export default function CharacterDetail() {
           </div>
 
           {c.short_desc && <p className="mt-3 text-bone/90">{c.short_desc}</p>}
-
-          {c.is_pc ? (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
-              <LiveStat field="humanity"   characterId={c.id} label="Humanity" initial={c.humanity}   max={10} />
-              <LiveStat field="hunger"     characterId={c.id} label="Hunger"   initial={c.hunger}     max={5}  />
-              <LiveStat field="reputation" characterId={c.id} label="Fame"     initial={c.reputation} max={10} />
-            </div>
-          ) : (
-            <div className="mt-3 text-xs text-ash flex flex-wrap gap-x-4 gap-y-1">
-              {/* для NPC шкалы скрыты — рассказчику не нужно их видеть в карточке */}
-              {c.bane && <span>Bane: <span className="text-bone">указан</span></span>}
-              {c.compulsion && <span>Compulsion: <span className="text-bone">указан</span></span>}
-            </div>
-          )}
 
           <div className="flex gap-2 mt-4">
             <Link to={`/characters/${id}/edit`} className="btn-ghost">✒️ Редактировать</Link>
@@ -142,6 +160,11 @@ export default function CharacterDetail() {
           </div>
         </div>
       </div>
+
+      {/* Kind-specific блоки */}
+      {c.kind === 'ghoul' && <GhoulInfo data={c.kind_data as GhoulData} />}
+      {c.kind === 'human' && <HumanInfo data={c.kind_data as HumanData} />}
+      {c.kind === 'other' && <OtherInfo data={c.kind_data as OtherData} />}
 
       <div className="grid lg:grid-cols-3 gap-4">
         <section className="card lg:col-span-2 space-y-3">
@@ -197,7 +220,7 @@ export default function CharacterDetail() {
         </section>
       </div>
 
-      {(c.bane || c.compulsion) && (
+      {(c.bane || c.compulsion) && c.kind === 'kindred' && (
         <section className="card grid md:grid-cols-2 gap-4">
           {c.bane && (
             <div>
@@ -214,9 +237,11 @@ export default function CharacterDetail() {
         </section>
       )}
 
-      {c.disciplines && c.disciplines.length > 0 && (
+      {c.disciplines && c.disciplines.length > 0 && (c.kind === 'kindred' || c.kind === 'ghoul') && (
         <section className="card">
-          <h3 className="text-lg mb-2">Disciplines</h3>
+          <h3 className="text-lg mb-2">
+            Disciplines {c.kind === 'ghoul' && <span className="subtle text-sm">(через витае)</span>}
+          </h3>
           <div className="flex flex-wrap gap-2">
             {c.disciplines.map((d, i) => (
               <span key={i} className="chip text-sm">
@@ -245,64 +270,63 @@ export default function CharacterDetail() {
   );
 }
 
-// Inline-слайдер с автосохранением (debounce 350ms)
-function LiveStat({
-  characterId, field, label, initial, max,
-}: {
-  characterId: string;
-  field: 'humanity' | 'hunger' | 'reputation';
-  label: string;
-  initial: number;
-  max: number;
-}) {
-  const qc = useQueryClient();
-  const [value, setValue] = useState(initial);
-  const [saved, setSaved] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => { setValue(initial); }, [initial]);
-
-  function onChange(v: number) {
-    setValue(v);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(async () => {
-      const { error } = await supabase
-        .from('characters')
-        .update({ [field]: v } as any)
-        .eq('id', characterId);
-      if (!error) {
-        setSaved(true);
-        setTimeout(() => setSaved(false), 800);
-        qc.invalidateQueries({ queryKey: ['character', characterId] });
-        qc.invalidateQueries({ queryKey: ['characters'] });
-        qc.invalidateQueries({ queryKey: ['dash-chars'] });
-      }
-    }, 350);
-  }
-
-  const pct = (value / max) * 100;
-  const trackStyle = {
-    background: `linear-gradient(to right, #c0233a 0%, #8a0e1a ${pct}%, #1d1014 ${pct}%, #1d1014 100%)`,
-  };
-
+function GhoulInfo({ data }: { data: GhoulData }) {
+  const has = data.years_served != null || data.addiction_level != null || data.bond_level != null;
+  if (!has) return null;
   return (
-    <div className="bg-velvet/50 rounded-lg px-3 py-2 border border-gold/10">
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-ash uppercase tracking-widest">{label}</span>
-        <span className="text-bone font-display text-base flex items-center gap-1">
-          {value}<span className="text-ash">/{max}</span>
-          {saved && <span className="text-rose text-xs ml-1">✓</span>}
-        </span>
+    <section className="card border-rose/20">
+      <h2 className="text-xl mb-2">🩸 Зависимость от витае</h2>
+      <div className="grid grid-cols-3 gap-3">
+        {data.years_served != null && (
+          <div className="bg-velvet/40 rounded-lg px-3 py-2">
+            <p className="label">Лет служения</p>
+            <p className="text-bone font-display text-2xl">{data.years_served}</p>
+          </div>
+        )}
+        {data.addiction_level != null && (
+          <div className="bg-velvet/40 rounded-lg px-3 py-2">
+            <p className="label">Зависимость</p>
+            <p className="text-bone font-display text-2xl">{data.addiction_level} <span className="text-ash text-sm">/ 5</span></p>
+          </div>
+        )}
+        {data.bond_level != null && (
+          <div className="bg-velvet/40 rounded-lg px-3 py-2">
+            <p className="label">Blood Bond</p>
+            <p className="text-bone font-display text-2xl">{data.bond_level} <span className="text-ash text-sm">/ 3</span></p>
+          </div>
+        )}
       </div>
-      <input
-        type="range"
-        min={0}
-        max={max}
-        value={value}
-        onChange={e => onChange(parseInt(e.target.value))}
-        style={trackStyle}
-        className="mt-1"
-      />
-    </div>
+    </section>
+  );
+}
+
+function HumanInfo({ data }: { data: HumanData }) {
+  const has = data.profession || data.allegiance || data.age != null || data.masquerade_aware;
+  if (!has) return null;
+  return (
+    <section className="card border-sky-500/20">
+      <h2 className="text-xl mb-2">👤 Смертный</h2>
+      <div className="grid sm:grid-cols-2 gap-3 text-sm">
+        {data.profession && <div><span className="label !inline">Профессия:</span> <span className="text-bone">{data.profession}</span></div>}
+        {data.age != null && <div><span className="label !inline">Возраст:</span> <span className="text-bone">{data.age}</span></div>}
+        {data.allegiance && <div className="sm:col-span-2"><span className="label !inline">Принадлежность:</span> <span className="text-bone">{data.allegiance}</span></div>}
+        {data.masquerade_aware && (
+          <div className="sm:col-span-2">
+            <span className="chip border-blood/40 bg-blood/10 text-rose">⚠ Знает о Kindred (Masquerade aware)</span>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function OtherInfo({ data }: { data: OtherData }) {
+  if (!data.type_label && !data.notes) return null;
+  return (
+    <section className="card">
+      <h2 className="text-xl mb-2">✨ Не такое существо</h2>
+      {data.type_label && <p><span className="label !inline">Тип:</span> <span className="text-bone">{data.type_label}</span></p>}
+      {data.notes && <p className="text-bone/90 whitespace-pre-wrap mt-2">{data.notes}</p>}
+    </section>
   );
 }

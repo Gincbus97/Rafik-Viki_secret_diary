@@ -1,9 +1,29 @@
 // Секта теперь свободный текст; ниже SECTS — список преднастроенных.
 export type Sect = string;
 export type CreatureKind = 'kindred' | 'ghoul' | 'human' | 'other';
+export type LifeStatus = 'active' | 'dead' | 'torpor' | 'missing' | 'unknown';
 export type FactionKind = 'sect' | 'coterie' | 'cult' | 'package' | 'other';
 export type LocationKind = 'haven' | 'elysium' | 'hunting_ground' | 'business' | 'other';
 export type QuestStatus = 'Active' | 'Completed' | 'Failed' | 'OnHold';
+
+// Kind-specific данные хранятся в JSONB-колонке kind_data
+export interface GhoulData {
+  domitor_id?: string | null;       // ссылка на персонажа-домитора (Kindred)
+  years_served?: number;
+  addiction_level?: number;          // 0-5: насколько подсажен на витае
+  bond_level?: number;               // 0-3 уровень Blood Bond
+  learned_disciplines?: { name: string; level: number }[];
+}
+export interface HumanData {
+  profession?: string;               // профессия / род занятий
+  allegiance?: string;               // на чьей стороне (Society of Leopold, Second Inquisition, Kindred ally...)
+  masquerade_aware?: boolean;        // знает о существовании Kindred
+  age?: number;
+}
+export interface OtherData {
+  type_label?: string;               // что это вообще такое: Werewolf? Mage? Spirit?
+  notes?: string;
+}
 
 export interface Discipline { name: string; level: number; }
 
@@ -20,6 +40,8 @@ export interface Character {
   name: string;
   is_pc: boolean;
   kind: CreatureKind;
+  life_status: LifeStatus;
+  kind_data: GhoulData | HumanData | OtherData | Record<string, unknown>;
   portrait_url: string | null;
   clan: string | null;
   sect: Sect;
@@ -31,6 +53,7 @@ export interface Character {
   short_desc: string | null;
   biography: string | null;
   disciplines: Discipline[];
+  // Игровые шкалы оставлены в БД (но в UI скрыты, ведутся в Foundry):
   humanity: number;
   hunger: number;
   reputation: number;
@@ -45,6 +68,14 @@ export interface Character {
   mindmap_x: number | null;
   mindmap_y: number | null;
 }
+
+export const LIFE_STATUSES: { value: LifeStatus; label: string; emoji: string; tone: string }[] = [
+  { value: 'active',  label: 'Активен',   emoji: '✨', tone: 'text-bone' },
+  { value: 'dead',    label: 'Final Death', emoji: '💀', tone: 'text-rose' },
+  { value: 'torpor',  label: 'Торпор',    emoji: '⚰️', tone: 'text-moon' },
+  { value: 'missing', label: 'Пропал',    emoji: '🌫️', tone: 'text-ash' },
+  { value: 'unknown', label: 'Неизвестно', emoji: '❓', tone: 'text-ash' },
+];
 
 export type RelationshipCategory = 'mechanic' | 'personal';
 
@@ -150,7 +181,7 @@ export const CLANS = [
   'Caitiff','Thin-blood',
 ] as const;
 
-export const SECTS = ['Camarilla','Anarch','Sabbat','Independent','Autarkis','Unknown'] as const;
+export const SECTS = ['Camarilla','Anarch','Sabbat','Independent','Autarkis','Церковь Каина','Unknown'] as const;
 
 export const CREATURE_KINDS: { value: CreatureKind; label: string; emoji: string }[] = [
   { value: 'kindred', label: 'Kindred (Vampire)', emoji: '🧛' },
