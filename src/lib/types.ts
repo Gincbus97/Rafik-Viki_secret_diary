@@ -88,18 +88,24 @@ export interface RelationshipType {
 }
 
 // Двунаправленные пары связей: A→B одного типа подразумевает B→A другого.
-// Используется для слияния стрелок в Mind Map в одну биграневую.
+// Используется для слияния стрелок в Mind Map в одну биграневую и для авто-reciprocal.
+// Туда же — симметричные пары (Любовь↔Любовь и т. д.).
 export const RECIPROCAL: Record<string, string> = {
+  // Механика
   'Sire': 'Childe',
   'Childe': 'Sire',
   'Boon owed': 'Boon held',
   'Boon held': 'Boon owed',
-  // Симметричные сами с собой
-  'Lover': 'Lover',
   'Ally': 'Ally',
-  'Enemy': 'Enemy',
-  'Rival': 'Rival',
   'Coterie member': 'Coterie member',
+  // Личное (русские)
+  'Любовь': 'Любовь',
+  'Враг': 'Враг',
+  'Соперник': 'Соперник',
+  // Touchstone — однонаправленный (вампир → его смертный якорь), reciprocal не нужен
+  // Mentor / Наставник — однонаправленный, reciprocal не нужен
+  // Hates/Fears/Trusts/Distrusts (Ненависть/Страх/Доверие/Недоверие) — одна сторона может
+  // ненавидеть, а вторая — нет. Reciprocal не создаём автоматически.
 };
 
 export interface Relationship {

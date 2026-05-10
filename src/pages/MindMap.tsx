@@ -289,6 +289,7 @@ export default function MindMap() {
   const [hops, setHops] = useState<number>(1);
   const [lockPositions, setLockPositions] = useState(true);
   const [showDescriptions, setShowDescriptions] = useState(true);
+  const [showTypes, setShowTypes] = useState(true);
 
   const [pendingConnect, setPendingConnect] = useState<{ from: string; to: string } | null>(null);
 
@@ -392,25 +393,29 @@ export default function MindMap() {
       groups.get(k)!.push(r);
     }
 
+    // Карта позиций для smart-routing хэндлов
+    const posById = new Map<string, { x: number; y: number }>();
+    for (const n of nodes) posById.set(n.id, n.position);
+
     const edges: Edge[] = [];
     for (const [, rels] of groups) {
       if (rels.length === 1) {
-        edges.push(buildEdge(rels[0], false, undefined, 0, showDescriptions));
+        edges.push(buildEdge(rels[0], false, undefined, 0, showDescriptions, showTypes, posById));
         continue;
       }
       const reciprocalPair = findReciprocalPair(rels);
       if (reciprocalPair) {
         const [r1, r2] = reciprocalPair;
-        edges.push(buildEdge(r1, false, r2, 0, showDescriptions));
+        edges.push(buildEdge(r1, false, r2, 0, showDescriptions, showTypes, posById));
         const remaining = rels.filter(x => x !== r1 && x !== r2);
-        remaining.forEach((r, idx) => edges.push(buildEdge(r, true, undefined, idx + 1, showDescriptions)));
+        remaining.forEach((r, idx) => edges.push(buildEdge(r, true, undefined, idx + 1, showDescriptions, showTypes, posById)));
       } else {
-        rels.forEach((r, idx) => edges.push(buildEdge(r, true, undefined, idx, showDescriptions)));
+        rels.forEach((r, idx) => edges.push(buildEdge(r, true, undefined, idx, showDescriptions, showTypes, posById)));
       }
     }
 
     return { nodes, edges };
-  }, [characters.data, relationships.data, showPcOnly, hideTheDead, clanFilter, charactersInFaction, focusMode, focusId, hops, minStrength, lockPositions, categoryFilter, showDescriptions]);
+  }, [characters.data, relationships.data, showPcOnly, hideTheDead, clanFilter, charactersInFaction, focusMode, focusId, hops, minStrength, lockPositions, categoryFilter, showDescriptions, showTypes]);
 
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);
@@ -481,8 +486,12 @@ export default function MindMap() {
             скрыть мёртвых
           </label>
           <label className="flex items-center gap-2 cursor-pointer text-sm">
+            <input type="checkbox" className="w-4 h-4 accent-blood" checked={showTypes} onChange={e => setShowTypes(e.target.checked)} />
+            показывать типы связей
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer text-sm">
             <input type="checkbox" className="w-4 h-4 accent-blood" checked={showDescriptions} onChange={e => setShowDescriptions(e.target.checked)} />
-            показать описание связи
+            показывать описание
           </label>
         </div>
 
@@ -632,12 +641,34 @@ export default function MindMap() {
 }
 
 // =============================== Edge builders ===============================
+// Выбор хэндлов на основе геометрии: стрелка выходит из ближайшей грани узла-источника
+// и заходит в противоположную грань узла-приёмника.
+function pickHandles(
+  src: { x: number; y: number } | undefined,
+  tgt: { x: number; y: number } | undefined,
+): { sourceHandle: string; targetHandle: string } {
+  if (!src || !tgt) return { sourceHandle: 'b', targetHandle: 't2' };
+  const dx = tgt.x - src.x;
+  const dy = tgt.y - src.y;
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return dx >= 0
+      ? { sourceHandle: 'r', targetHandle: 'l2' }
+      : { sourceHandle: 'l', targetHandle: 'r2' };
+  } else {
+    return dy >= 0
+      ? { sourceHandle: 'b', targetHandle: 't2' }
+      : { sourceHandle: 't', targetHandle: 'b2' };
+  }
+}
+
 function buildEdge(
   r: RelEdge,
   offset: boolean,
   reciprocal: RelEdge | undefined,
   parallelIdx: number,
   showDescription: boolean,
+  showTypes: boolean,
+  posById: Map<string, { x: number; y: number }>,
 ): Edge {
   const cat = r.type?.category ?? 'personal';
   const color = edgeColor(r.type?.name ?? '', cat);
@@ -646,17 +677,26 @@ function buildEdge(
 
   const typeName = r.type?.name ?? '';
   const otherTypeName = reciprocal?.type?.name ?? '';
-  const titleLine = reciprocal
-    ? (typeName === otherTypeName ? typeName : `${typeName} ↔ ${otherTypeName}`)
-    : typeName;
-  const desc = (showDescription && r.description) ? `\n${r.description}` : '';
-  const label = `${titleLine}${desc}`;
+  const titleLine = showTypes
+    ? (reciprocal
+        ? (typeName === otherTypeName ? typeName : `${typeName} ↔ ${otherTypeName}`)
+        : typeName)
+    : '';
+  const desc = (showDescription && r.description) ? r.description : '';
+  const label = [titleLine, desc].filter(Boolean).join('\n');
+
+  const { sourceHandle, targetHandle } = pickHandles(
+    posById.get(r.from_character_id),
+    posById.get(r.to_character_id),
+  );
 
   const baseStroke = 1 + ((r.strength ?? 3) - 1) * 0.5;
   return {
     id: r.id,
     source: r.from_character_id,
     target: r.to_character_id,
+    sourceHandle,
+    targetHandle,
     label,
     type: 'chronicle',
     style: {
@@ -689,16 +729,24 @@ function findReciprocalPair(rels: RelEdge[]): [RelEdge, RelEdge] | null {
 
 function edgeColor(typeName: string, category: 'mechanic' | 'personal'): string {
   const t = typeName.toLowerCase();
+  // Механика
   if (t.startsWith('sire') || t === 'childe')        return '#c0233a';
   if (t.startsWith('blood bond'))                     return '#8a0e1a';
   if (t === 'ghoul')                                  return '#d8536e';
-  if (t === 'lover')                                  return '#d8536e';
-  if (t === 'enemy' || t === 'hates')                 return '#7a1a1a';
-  if (t === 'rival')                                  return '#c8a96a';
-  if (t === 'ally' || t === 'mentor' || t === 'trusts') return '#a89c9b';
-  if (t === 'fears' || t === 'distrusts')             return '#5b4a6e';
+  if (t === 'touchstone')                             return '#dcd0e3';
+  if (t === 'ally')                                   return '#a89c9b';
   if (t === 'coterie member')                         return '#dcd0e3';
   if (t.startsWith('boon'))                           return '#c8a96a';
+  if (t === 'knows about')                            return '#c8a96a';
+  // Личное (русский) и старые английские
+  if (t === 'любовь' || t === 'lover')                return '#d8536e';
+  if (t === 'враг' || t === 'enemy')                  return '#7a1a1a';
+  if (t === 'ненависть' || t === 'hates')             return '#7a1a1a';
+  if (t === 'соперник' || t === 'rival')              return '#c8a96a';
+  if (t === 'наставник' || t === 'mentor')            return '#a89c9b';
+  if (t === 'доверие' || t === 'trusts')              return '#a89c9b';
+  if (t === 'страх' || t === 'fears')                 return '#5b4a6e';
+  if (t === 'недоверие' || t === 'distrusts')         return '#5b4a6e';
   return category === 'mechanic' ? '#c8a96a' : '#a89c9b';
 }
 
@@ -743,13 +791,17 @@ function CreateRelationshipModal({
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (!desc.trim()) {
+      setErr('Опиши что это за связь — без описания нельзя.');
+      return;
+    }
     setBusy(true); setErr(null);
     try {
       await createRelWithReciprocal({
         from_character_id: fromId,
         to_character_id: toId,
         type_id: typeId,
-        description: desc || null,
+        description: desc.trim(),
         started_at_date: null,
         started_at_session: null,
         strength,
@@ -791,8 +843,14 @@ function CreateRelationshipModal({
         </div>
 
         <div>
-          <label className="label">Описание</label>
-          <textarea className="input min-h-[60px]" value={desc} onChange={e => setDesc(e.target.value)} placeholder='напр. "BFFs — но за спиной флиртует с её сиром"' />
+          <label className="label">Описание <span className="text-rose">*</span></label>
+          <textarea
+            className="input min-h-[60px]"
+            required
+            value={desc}
+            onChange={e => setDesc(e.target.value)}
+            placeholder='напр. "BFFs — но за спиной флиртует с её сиром"'
+          />
         </div>
 
         <div>
@@ -804,7 +862,9 @@ function CreateRelationshipModal({
 
         <div className="flex gap-2 justify-end">
           <button type="button" onClick={onClose} className="btn-ghost">Отмена</button>
-          <button type="submit" className="btn-primary" disabled={busy}>{busy ? 'Связываем...' : 'Создать связь'}</button>
+          <button type="submit" className="btn-primary" disabled={busy || !desc.trim()}>
+            {busy ? 'Связываем...' : 'Создать связь'}
+          </button>
         </div>
       </form>
     </div>

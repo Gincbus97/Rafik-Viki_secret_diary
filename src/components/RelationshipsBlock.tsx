@@ -227,11 +227,16 @@ function RelationshipForm({ mode, existing, fromCharacterId, types, characters, 
         typesList = [...types, data as RelationshipType];
       }
 
+      if (!desc.trim()) {
+        setErr('Опиши что это за связь — без описания нельзя.');
+        setBusy(false);
+        return;
+      }
       const payload = {
         from_character_id: fromCharacterId,
         to_character_id: toId,
         type_id: usedTypeId,
-        description: desc || null,
+        description: desc.trim(),
         started_at_date: date || null,
         started_at_session: session ? parseInt(session) : null,
         strength,
@@ -284,8 +289,14 @@ function RelationshipForm({ mode, existing, fromCharacterId, types, characters, 
         </div>
       </div>
       <div>
-        <label className="label">Описание</label>
-        <textarea className="input min-h-[60px]" value={desc} onChange={e => setDesc(e.target.value)} />
+        <label className="label">Описание <span className="text-rose">*</span></label>
+        <textarea
+          className="input min-h-[60px]"
+          required
+          placeholder="Что именно происходит между этими двумя? Расскажи историю в одно-два предложения."
+          value={desc}
+          onChange={e => setDesc(e.target.value)}
+        />
       </div>
       <div className="grid grid-cols-3 gap-3">
         <div>
@@ -303,7 +314,7 @@ function RelationshipForm({ mode, existing, fromCharacterId, types, characters, 
       </div>
       {err && <p className="text-rose text-sm">{err}</p>}
       <div className="flex gap-2">
-        <button className="btn-primary text-sm" disabled={busy || !toId}>
+        <button className="btn-primary text-sm" disabled={busy || !toId || !desc.trim()}>
           {busy ? 'Сохраняем...' : (mode === 'new' ? 'Добавить связь' : 'Сохранить')}
         </button>
         {onCancel && (
