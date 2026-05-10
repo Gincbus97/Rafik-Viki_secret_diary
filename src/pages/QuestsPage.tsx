@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -23,6 +23,7 @@ const STATUS_COLOR: Record<QuestStatus, string> = {
 
 export default function QuestsPage() {
   const qc = useQueryClient();
+  const nav = useNavigate();
   const { user } = useAuth();
   const [view, setView] = useState<'list' | 'kanban'>('list');
   const [statusFilter, setStatusFilter] = useState<QuestStatus | 'all'>('all');
@@ -104,7 +105,7 @@ export default function QuestsPage() {
           if (!newTitle.trim()) return;
           const id = await create.mutateAsync(newTitle.trim());
           setNewTitle('');
-          window.location.assign(`/quests/${id}`);
+          nav(`/quests/${id}`);
         }}
       >
         <div className="flex-1">
