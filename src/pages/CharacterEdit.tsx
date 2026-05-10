@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import {
   CLANS, SECTS, PREDATOR_TYPES, DEFAULT_DISCIPLINES, CREATURE_KINDS,
+  CLAN_BANES, CLAN_COMPULSIONS,
   type Character, type Discipline, type LocationItem, type CreatureKind,
 } from '@/lib/types';
 import Slider from '@/components/Slider';
@@ -170,23 +171,53 @@ export default function CharacterEdit({ mode }: Props) {
           </div>
           <div>
             <label className="label">Клан</label>
-            <select className="input" value={form.clan ?? ''} onChange={e => set('clan', e.target.value)}>
+            <select
+              className="input"
+              value={form.clan ?? ''}
+              onChange={e => {
+                const newClan = e.target.value;
+                setForm(s => {
+                  const next: Partial<Character> = { ...s, clan: newClan || null };
+                  // Автоподстановка bane/compulsion если поля пустые и в нашем словаре
+                  if (newClan && (!s.bane || s.bane.trim() === '') && CLAN_BANES[newClan]) {
+                    next.bane = CLAN_BANES[newClan];
+                  }
+                  if (newClan && (!s.compulsion || s.compulsion.trim() === '') && CLAN_COMPULSIONS[newClan]) {
+                    next.compulsion = CLAN_COMPULSIONS[newClan];
+                  }
+                  return next;
+                });
+              }}
+            >
               <option value="">— не выбран —</option>
               {CLANS.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="label">Секта</label>
-            <input
+            <select
               className="input"
-              list="sects-list"
-              placeholder="Camarilla / Anarch / своё..."
-              value={form.sect ?? ''}
-              onChange={e => set('sect', e.target.value)}
-            />
-            <datalist id="sects-list">
-              {SECTS.map(s => <option key={s} value={s} />)}
-            </datalist>
+              value={SECTS.includes(form.sect as any) ? (form.sect ?? 'Unknown') : '__custom__'}
+              onChange={e => {
+                if (e.target.value === '__custom__') {
+                  // оставить текущее значение, активировать поле ввода ниже
+                  if (SECTS.includes(form.sect as any)) set('sect', '');
+                } else {
+                  set('sect', e.target.value);
+                }
+              }}
+            >
+              {SECTS.map(s => <option key={s} value={s}>{s}</option>)}
+              <option value="__custom__">Другое (вписать)…</option>
+            </select>
+            {!SECTS.includes(form.sect as any) && (
+              <input
+                className="input mt-2"
+                placeholder="Например: Black Hand, Inconnu..."
+                value={form.sect ?? ''}
+                onChange={e => set('sect', e.target.value)}
+              />
+            )}
           </div>
           <div>
             <label className="label">Поколение</label>
@@ -297,12 +328,44 @@ export default function CharacterEdit({ mode }: Props) {
         </div>
         <div className="grid md:grid-cols-2 gap-3">
           <div>
-            <label className="label">Bane</label>
-            <input className="input" value={form.bane ?? ''} onChange={e => set('bane', e.target.value)} />
+            <div className="flex items-center justify-between">
+              <label className="label">Bane</label>
+              {form.clan && CLAN_BANES[form.clan] && (
+                <button
+                  type="button"
+                  className="text-xs text-rose hover:text-bloodlight underline-offset-2 hover:underline"
+                  onClick={() => set('bane', CLAN_BANES[form.clan!])}
+                >
+                  ↳ из правил {form.clan}
+                </button>
+              )}
+            </div>
+            <textarea
+              className="input min-h-[100px]"
+              placeholder={form.clan && CLAN_BANES[form.clan] ? CLAN_BANES[form.clan] : 'Опиши бан клана или личный...'}
+              value={form.bane ?? ''}
+              onChange={e => set('bane', e.target.value)}
+            />
           </div>
           <div>
-            <label className="label">Compulsion</label>
-            <input className="input" value={form.compulsion ?? ''} onChange={e => set('compulsion', e.target.value)} />
+            <div className="flex items-center justify-between">
+              <label className="label">Compulsion</label>
+              {form.clan && CLAN_COMPULSIONS[form.clan] && (
+                <button
+                  type="button"
+                  className="text-xs text-rose hover:text-bloodlight underline-offset-2 hover:underline"
+                  onClick={() => set('compulsion', CLAN_COMPULSIONS[form.clan!])}
+                >
+                  ↳ из правил {form.clan}
+                </button>
+              )}
+            </div>
+            <textarea
+              className="input min-h-[100px]"
+              placeholder={form.clan && CLAN_COMPULSIONS[form.clan] ? CLAN_COMPULSIONS[form.clan] : 'Compulsion клана или одноразовая...'}
+              value={form.compulsion ?? ''}
+              onChange={e => set('compulsion', e.target.value)}
+            />
           </div>
         </div>
         <div>

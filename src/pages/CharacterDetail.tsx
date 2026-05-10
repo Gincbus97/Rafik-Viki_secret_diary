@@ -101,10 +101,10 @@ export default function CharacterDetail() {
           <div className="subtle text-sm mt-1 flex flex-wrap gap-x-3 gap-y-1">
             {c.clan && <span>Клан: <span className="text-bone">{c.clan}</span></span>}
             {c.sect && c.sect !== 'Unknown' && <span>Секта: <span className="text-bone">{c.sect}</span></span>}
-            {c.generation && <span>{c.generation} поколение</span>}
-            {c.embrace_age && <span>Embrace: <span className="text-bone">{c.embrace_age}</span></span>}
-            {c.status_in_sect && <span>Статус: <span className="text-bone">{c.status_in_sect}</span></span>}
-            {c.predator_type && <span>Predator: <span className="text-bone">{c.predator_type}</span></span>}
+            {c.kind === 'kindred' && c.generation && <span>{c.generation} поколение</span>}
+            {c.kind === 'kindred' && c.embrace_age && <span>Embrace: <span className="text-bone">{c.embrace_age}</span></span>}
+            {c.status_in_sect && <span>{c.is_pc ? 'Статус' : 'Роль'}: <span className="text-bone">{c.status_in_sect}</span></span>}
+            {c.kind === 'kindred' && c.predator_type && <span>Predator: <span className="text-bone">{c.predator_type}</span></span>}
             {sire.data && (
               <span>Sire: <Link className="link" to={`/characters/${sire.data.id}`}>{sire.data.name}</Link></span>
             )}
@@ -115,11 +115,19 @@ export default function CharacterDetail() {
 
           {c.short_desc && <p className="mt-3 text-bone/90">{c.short_desc}</p>}
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
-            <LiveStat field="humanity"   characterId={c.id} label="Humanity" initial={c.humanity}   max={10} />
-            <LiveStat field="hunger"     characterId={c.id} label="Hunger"   initial={c.hunger}     max={5}  />
-            <LiveStat field="reputation" characterId={c.id} label="Fame"     initial={c.reputation} max={10} />
-          </div>
+          {c.is_pc ? (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
+              <LiveStat field="humanity"   characterId={c.id} label="Humanity" initial={c.humanity}   max={10} />
+              <LiveStat field="hunger"     characterId={c.id} label="Hunger"   initial={c.hunger}     max={5}  />
+              <LiveStat field="reputation" characterId={c.id} label="Fame"     initial={c.reputation} max={10} />
+            </div>
+          ) : (
+            <div className="mt-3 text-xs text-ash flex flex-wrap gap-x-4 gap-y-1">
+              {/* для NPC шкалы скрыты — рассказчику не нужно их видеть в карточке */}
+              {c.bane && <span>Bane: <span className="text-bone">указан</span></span>}
+              {c.compulsion && <span>Compulsion: <span className="text-bone">указан</span></span>}
+            </div>
+          )}
 
           <div className="flex gap-2 mt-4">
             <Link to={`/characters/${id}/edit`} className="btn-ghost">✒️ Редактировать</Link>

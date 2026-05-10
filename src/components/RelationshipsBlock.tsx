@@ -269,7 +269,15 @@ function RelationshipForm({ mode, existing, fromCharacterId, types, characters, 
         <div>
           <label className="label">Тип связи</label>
           <select className="input" value={typeId} onChange={e => setTypeId(e.target.value)} disabled={!!customType}>
-            {types.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            <optgroup label="⚙ Механика">
+              {types.filter(t => t.category === 'mechanic').map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </optgroup>
+            <optgroup label="❤ Личное">
+              {types.filter(t => t.category === 'personal').map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </optgroup>
+            <optgroup label="Прочее">
+              {types.filter(t => !t.category || (t.category !== 'mechanic' && t.category !== 'personal')).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </optgroup>
           </select>
           <input
             className="input mt-1"
