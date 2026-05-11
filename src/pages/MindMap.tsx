@@ -540,8 +540,26 @@ export default function MindMap() {
 
     const edges: Edge[] = [];
     for (const [, rels] of groups) {
+      // === Слияние Ghoul + Blood Bond в одну линию "Ghoul · BB N" ===
+      // Работает независимо от источника (синтез/старая таблица) и направлений.
+      const isGhoulName = (n: string | undefined) => !!n && (n === 'Ghoul' || n.startsWith('Ghoul ·'));
+      const bbMatch = (n: string | undefined) => n?.match(/^Blood Bond\s*(\d)/i)?.[1] ?? null;
+      const ghoulRel = rels.find(r => isGhoulName(r.type?.name));
+      const bbRel    = rels.find(r => bbMatch(r.type?.name));
+      let workSet = rels;
+      if (ghoulRel && bbRel && ghoulRel !== bbRel) {
+        const level = bbMatch(bbRel.type?.name) ?? '?';
+        const mergedLabel = `Ghoul · BB ${level}`;
+        const merged: RelEdge = {
+          ...ghoulRel,
+          id: `${ghoulRel.id}+${bbRel.id}`,
+          type: ghoulRel.type ? { ...ghoulRel.type, name: mergedLabel } : undefined,
+        };
+        workSet = [merged, ...rels.filter(r => r !== ghoulRel && r !== bbRel)];
+      }
+
       // Сортируем чтобы личное было первым (parallelIdx=0, центральная линия)
-      const sorted = [...rels].sort((a, b) => {
+      const sorted = [...workSet].sort((a, b) => {
         const aP = a.type?.category === 'personal' ? 0 : 1;
         const bP = b.type?.category === 'personal' ? 0 : 1;
         return aP - bP;
