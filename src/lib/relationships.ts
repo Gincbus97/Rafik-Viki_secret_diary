@@ -1,6 +1,14 @@
 import { supabase } from './supabase';
 import { RECIPROCAL, type RelationshipType } from './types';
 
+// Сначала смотрим в reciprocal_name из БД (настраивается в /settings/types),
+// потом — в хардкод RECIPROCAL для бэк-совместимости.
+function reciprocalNameOf(type: RelationshipType | undefined): string | null {
+  if (!type) return null;
+  if (type.reciprocal_name && type.reciprocal_name.trim()) return type.reciprocal_name;
+  return RECIPROCAL[type.name] ?? null;
+}
+
 export interface RelPayload {
   from_character_id: string;
   to_character_id: string;
@@ -23,8 +31,7 @@ export async function createRelWithReciprocal(payload: RelPayload, types: Relati
   if (error) throw error;
 
   const main = types.find(t => t.id === payload.type_id);
-  if (!main) return;
-  const reciprocalName = RECIPROCAL[main.name];
+  const reciprocalName = reciprocalNameOf(main);
   if (!reciprocalName) return;
   const reciprocalType = types.find(t => t.name === reciprocalName);
   if (!reciprocalType) return;
@@ -73,27 +80,25 @@ export async function updateRelWithReciprocal(
   // Если тип изменился — старый reciprocal удаляем, новый создаём
   if (old.type_id !== patch.type_id) {
     const oldType = types.find(t => t.id === old.type_id);
-    if (oldType) {
-      const oldReciprocalName = RECIPROCAL[oldType.name];
-      if (oldReciprocalName) {
-        const oldReciprocalType = types.find(t => t.name === oldReciprocalName);
-        if (oldReciprocalType) {
-          await supabase
-            .from('relationships')
-            .delete()
-            .eq('from_character_id', old.to_character_id)
-            .eq('to_character_id',   old.from_character_id)
-            .eq('type_id', oldReciprocalType.id);
-        }
+    const oldReciprocalName = reciprocalNameOf(oldType);
+    if (oldReciprocalName) {
+      const oldReciprocalType = types.find(t => t.name === oldReciprocalName);
+      if (oldReciprocalType) {
+        await supabase
+          .from('relationships')
+          .delete()
+          .eq('from_character_id', old.to_character_id)
+          .eq('to_character_id',   old.from_character_id)
+          .eq('type_id', oldReciprocalType.id);
       }
     }
     // Создаём новый reciprocal
     const newType = types.find(t => t.id === patch.type_id);
-    if (newType) {
-      const reciprocalName = RECIPROCAL[newType.name];
-      if (reciprocalName) {
-        const reciprocalType = types.find(t => t.name === reciprocalName);
-        if (reciprocalType) {
+    const reciprocalName = reciprocalNameOf(newType);
+    if (reciprocalName) {
+      const reciprocalType = types.find(t => t.name === reciprocalName);
+      if (reciprocalType) {
+        {
           const { data: existing } = await supabase
             .from('relationships')
             .select('id')
@@ -134,8 +139,7 @@ export async function deleteRelWithReciprocal(id: string, types: RelationshipTyp
 
   if (!rel) return;
   const t = types.find(t => t.id === rel.type_id);
-  if (!t) return;
-  const reciprocalName = RECIPROCAL[t.name];
+  const reciprocalName = reciprocalNameOf(t);
   if (!reciprocalName) return;
   const reciprocalType = types.find(t => t.name === reciprocalName);
   if (!reciprocalType) return;

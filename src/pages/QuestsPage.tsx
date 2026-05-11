@@ -169,19 +169,36 @@ export default function QuestsPage() {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {(['Active','Completed','Failed'] as QuestStatus[]).map(s => (
-            <div key={s} className={`card border ${STATUS_COLOR[s]}`}>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          {(['Active','OnHold','Completed','Failed'] as QuestStatus[]).map(s => (
+            <div
+              key={s}
+              onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('ring-2','ring-rose'); }}
+              onDragLeave={(e) => { e.currentTarget.classList.remove('ring-2','ring-rose'); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.currentTarget.classList.remove('ring-2','ring-rose');
+                const id = e.dataTransfer.getData('text/plain');
+                if (id) updateStatus.mutate({ id, status: s });
+              }}
+              className={`card border ${STATUS_COLOR[s]} transition`}
+            >
               <h3 className="text-lg mb-2">{STATUS_LABEL[s]}</h3>
-              <div className="space-y-2">
+              <div className="space-y-2 min-h-[60px]">
                 {filtered.filter(qu => qu.status === s).map(qu => (
-                  <Link key={qu.id} to={`/quests/${qu.id}`} className="block bg-velvet/40 rounded-lg p-2 hover:bg-velvet/60">
+                  <Link
+                    key={qu.id}
+                    to={`/quests/${qu.id}`}
+                    draggable
+                    onDragStart={(e) => e.dataTransfer.setData('text/plain', qu.id)}
+                    className="block bg-velvet/40 rounded-lg p-2 hover:bg-velvet/60 cursor-grab active:cursor-grabbing"
+                  >
                     <p className="text-bone">{qu.title}</p>
                     {qu.description && <p className="subtle text-xs line-clamp-2">{qu.description}</p>}
                   </Link>
                 ))}
                 {filtered.filter(qu => qu.status === s).length === 0 && (
-                  <p className="text-ash text-xs">пусто</p>
+                  <p className="text-ash text-xs italic">— пусто, перетащи сюда —</p>
                 )}
               </div>
             </div>

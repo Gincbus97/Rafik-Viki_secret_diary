@@ -50,6 +50,7 @@ function CharacterNode({ data }: {
     clan: string | null; portrait_url: string | null;
     selected?: boolean;
     subtitle?: string;
+    factionIcons?: { id: string; icon: string; name: string }[];
   };
 }) {
   let borderClass = 'border-2 border-gold/40';
@@ -61,7 +62,7 @@ function CharacterNode({ data }: {
   const dim = data.life_status && data.life_status !== 'active' ? 'opacity-70 grayscale-[40%]' : '';
 
   return (
-    <div className={`bg-crypt rounded-xl shadow-crypt px-3 py-2 min-w-[180px] ${borderClass} ${ring} ${dim}`}>
+    <div className={`relative bg-crypt rounded-xl shadow-crypt px-3 py-2 min-w-[180px] ${borderClass} ${ring} ${dim}`}>
       <Handle id="t"  type="source" position={Position.Top}    style={handleStyle} />
       <Handle id="r"  type="source" position={Position.Right}  style={handleStyle} />
       <Handle id="b"  type="source" position={Position.Bottom} style={handleStyle} />
@@ -91,6 +92,19 @@ function CharacterNode({ data }: {
           )}
         </div>
       </div>
+      {data.factionIcons && data.factionIcons.length > 0 && (
+        <div className="absolute -top-2 -right-2 flex gap-0.5">
+          {data.factionIcons.slice(0, 3).map(f => (
+            <span
+              key={f.id}
+              title={f.name}
+              className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-ink border border-gold/40 text-sm leading-none"
+            >
+              {f.icon}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -262,9 +276,9 @@ export default function MindMap() {
     queryKey: ['mm-factions'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('factions').select('id,name');
+        .from('factions').select('id,name,icon,kind');
       if (error) throw error;
-      return data as unknown as Pick<Faction,'id'|'name'>[];
+      return data as unknown as Pick<Faction,'id'|'name'|'icon'|'kind'>[];
     },
   });
 
@@ -362,6 +376,18 @@ export default function MindMap() {
       });
     }
 
+    // Карта фракций по character_id для отображения иконок на узлах
+    const factionIconsByChar = new Map<string, { id: string; icon: string; name: string }[]>();
+    if (factionMembers.data && factions.data) {
+      const factionById = new Map(factions.data.map(f => [f.id, f]));
+      for (const m of factionMembers.data) {
+        const f = factionById.get(m.faction_id);
+        if (!f?.icon) continue;
+        if (!factionIconsByChar.has(m.character_id)) factionIconsByChar.set(m.character_id, []);
+        factionIconsByChar.get(m.character_id)!.push({ id: f.id, icon: f.icon, name: f.name });
+      }
+    }
+
     const nodes: Node[] = ids.map(id => {
       const c = charById.get(id)!;
       const stored = (typeof c.mindmap_x === 'number' && typeof c.mindmap_y === 'number')
@@ -376,6 +402,7 @@ export default function MindMap() {
           name: c.name, is_pc: c.is_pc, kind: c.kind, clan: c.clan,
           life_status: c.life_status,
           portrait_url: c.portrait_url, selected: focusId === id,
+          factionIcons: factionIconsByChar.get(id) ?? [],
         },
       };
     });
@@ -416,10 +443,30 @@ export default function MindMap() {
           });
         }
       }
-      // Blood Bonds
+      // Ghoul: domitor → ghoul. Если есть blood bond К ТОМУ ЖЕ домитору — мерджим в одну метку.
+      const domitorBondLevel = (c.kind === 'ghoul' && kd.domitor_id && Array.isArray(kd.blood_bonded_to))
+        ? (kd.blood_bonded_to.find(b => b?.character_id === kd.domitor_id)?.level ?? null)
+        : null;
+      if (c.kind === 'ghoul' && kd.domitor_id) {
+        const t = findType('Ghoul');
+        if (t) {
+          const label = domitorBondLevel ? `Ghoul · BB ${domitorBondLevel}` : 'Ghoul';
+          synthesized.push({
+            id: `synth-ghoul-${c.id}`,
+            from_character_id: kd.domitor_id,
+            to_character_id: c.id,
+            type_id: t.id,
+            description: null, started_at_date: null, started_at_session: null,
+            strength: 5, created_by: null, created_at: '',
+            type: { id: t.id, name: label, category: t.category, color: t.color, dashed: t.dashed, thickness: t.thickness },
+          });
+        }
+      }
+      // Blood Bonds (но не до домитора если это гуль — уже включили в Ghoul-метку)
       if (Array.isArray(kd.blood_bonded_to)) {
         for (const b of kd.blood_bonded_to) {
           if (!b?.character_id) continue;
+          if (c.kind === 'ghoul' && kd.domitor_id === b.character_id) continue;
           const t = findType(`Blood Bond ${b.level}`);
           if (!t) continue;
           synthesized.push({
@@ -434,18 +481,39 @@ export default function MindMap() {
           });
         }
       }
-      // Ghoul: domitor → ghoul
-      if (c.kind === 'ghoul' && kd.domitor_id) {
-        const t = findType('Ghoul');
-        if (t) synthesized.push({
-          id: `synth-ghoul-${c.id}`,
-          from_character_id: kd.domitor_id,
-          to_character_id: c.id,
-          type_id: t.id,
-          description: null, started_at_date: null, started_at_session: null,
-          strength: 5, created_by: null, created_at: '',
-          type: { id: t.id, name: t.name, category: t.category, color: t.color, dashed: t.dashed, thickness: t.thickness },
-        });
+      // Herd: смертные источники крови
+      if (Array.isArray(kd.herd)) {
+        const t = findType('Herd') ?? findType('Стадо');
+        for (const hid of kd.herd) {
+          if (!hid) continue;
+          if (!t) continue;
+          synthesized.push({
+            id: `synth-herd-${c.id}-${hid}`,
+            from_character_id: c.id,
+            to_character_id: hid,
+            type_id: t.id,
+            description: null, started_at_date: null, started_at_session: null,
+            strength: 2, created_by: null, created_at: '',
+            type: { id: t.id, name: t.name, category: t.category, color: t.color, dashed: t.dashed, thickness: t.thickness },
+          });
+        }
+      }
+      // Mortal Allies
+      if (Array.isArray(kd.mortal_allies)) {
+        const t = findType('Mortal Ally') ?? findType('Союзник') ?? findType('Ally');
+        for (const aid of kd.mortal_allies) {
+          if (!aid) continue;
+          if (!t) continue;
+          synthesized.push({
+            id: `synth-mally-${c.id}-${aid}`,
+            from_character_id: c.id,
+            to_character_id: aid,
+            type_id: t.id,
+            description: null, started_at_date: null, started_at_session: null,
+            strength: 3, created_by: null, created_at: '',
+            type: { id: t.id, name: t.name, category: t.category, color: t.color, dashed: t.dashed, thickness: t.thickness },
+          });
+        }
       }
     }
 

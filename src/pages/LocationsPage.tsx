@@ -2,16 +2,7 @@ import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
-import type { LocationItem, LocationKind, Character, Faction } from '@/lib/types';
-
-const KINDS: LocationKind[] = ['haven','elysium','hunting_ground','business','other'];
-const KIND_LABEL: Record<LocationKind, string> = {
-  haven:           '🏚 Haven',
-  elysium:         '🕯 Elysium',
-  hunting_ground:  '🩸 Hunting ground',
-  business:        '🏢 Business',
-  other:           '· Other',
-};
+import { LOCATION_KINDS, type LocationItem, type LocationKind, type Character, type Faction } from '@/lib/types';
 
 export default function LocationsPage() {
   const qc = useQueryClient();
@@ -114,7 +105,7 @@ function LocationCard({
         <div>
           <label className="label">Тип</label>
           <select className="input" value={draft.kind ?? 'other'} onChange={e => { setDraft(d => ({...d, kind: e.target.value as LocationKind})); save.mutate(); }}>
-            {KINDS.map(k => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
+            {LOCATION_KINDS.map(k => <option key={k.value} value={k.value}>{k.emoji} {k.label}</option>)}
           </select>
         </div>
         <div>

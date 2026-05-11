@@ -3,13 +3,41 @@ export type Sect = string;
 export type CreatureKind = 'kindred' | 'ghoul' | 'human' | 'other';
 export type LifeStatus = 'active' | 'dead' | 'torpor' | 'missing' | 'unknown';
 export type FactionKind = 'sect' | 'coterie' | 'cult' | 'package' | 'other';
-export type LocationKind = 'haven' | 'elysium' | 'hunting_ground' | 'business' | 'other';
+export type LocationKind =
+  | 'haven' | 'elysium' | 'hunting_ground' | 'business'
+  | 'police_station' | 'hospital' | 'church' | 'government' | 'mortuary'
+  | 'university' | 'park' | 'club' | 'apartment' | 'warehouse'
+  | 'restaurant' | 'safehouse' | 'cemetery' | 'subway' | 'other';
+
+export const LOCATION_KINDS: { value: LocationKind; label: string; emoji: string }[] = [
+  { value: 'haven',          label: 'Haven',                emoji: '🏚' },
+  { value: 'elysium',        label: 'Elysium',              emoji: '🕯' },
+  { value: 'hunting_ground', label: 'Hunting ground',       emoji: '🩸' },
+  { value: 'business',       label: 'Business',             emoji: '🏢' },
+  { value: 'police_station', label: 'Полиция',              emoji: '🚓' },
+  { value: 'hospital',       label: 'Больница',             emoji: '🏥' },
+  { value: 'church',         label: 'Церковь / храм',       emoji: '⛪' },
+  { value: 'government',     label: 'Правительство / суд',  emoji: '🏛️' },
+  { value: 'mortuary',       label: 'Морг / похоронное бюро', emoji: '⚰️' },
+  { value: 'university',     label: 'Университет',          emoji: '🎓' },
+  { value: 'park',           label: 'Парк',                 emoji: '🌳' },
+  { value: 'club',           label: 'Клуб / бар',           emoji: '🎭' },
+  { value: 'apartment',      label: 'Квартира / жильё',     emoji: '🚪' },
+  { value: 'warehouse',      label: 'Склад',                emoji: '📦' },
+  { value: 'restaurant',     label: 'Ресторан',             emoji: '🍴' },
+  { value: 'safehouse',      label: 'Конспиративная квартира', emoji: '🔒' },
+  { value: 'cemetery',       label: 'Кладбище',             emoji: '🪦' },
+  { value: 'subway',         label: 'Метро / туннели',      emoji: '🚇' },
+  { value: 'other',          label: 'Другое',               emoji: '·' },
+];
 export type QuestStatus = 'Active' | 'Completed' | 'Failed' | 'OnHold';
 
 // Kind-specific данные хранятся в JSONB-колонке kind_data
 export interface KindredData {
   touchstones?: string[];            // character IDs — смертные якоря Humanity
   blood_bonded_to?: { character_id: string; level: 1 | 2 | 3 }[];
+  herd?: string[];                    // character IDs — Стадо (источники крови)
+  mortal_allies?: string[];           // character IDs — смертные союзники (V5 Allies background)
 }
 export interface GhoulData {
   domitor_id?: string | null;       // ссылка на персонажа-домитора (Kindred)
@@ -93,6 +121,7 @@ export interface RelationshipType {
   dashed: boolean;
   thickness: number;
   hidden_from_manual: boolean;
+  reciprocal_name: string | null;   // имя парного типа (null = односторонний)
 }
 
 // Двунаправленные пары связей: A→B одного типа подразумевает B→A другого.
@@ -138,6 +167,7 @@ export interface Faction {
   territory: string | null;
   goals: string | null;
   notes: string | null;
+  icon: string | null;        // emoji или короткий маркер (☩, ⚜, 🦇 и т.д.)
 }
 
 export interface LocationItem {
@@ -179,6 +209,7 @@ export interface SessionRow {
   events: string | null;
   new_npcs: string | null;
   rel_changes: string | null;
+  images: string[];           // URL'ы картинок (галерея сессии)
 }
 
 export interface PersonalNote {
@@ -195,7 +226,7 @@ export const CLANS = [
   'Caitiff','Thin-blood',
 ] as const;
 
-export const SECTS = ['Camarilla','Anarch','Sabbat','Independent','Autarkis','Церковь Каина','Unknown'] as const;
+export const SECTS = ['Camarilla','Anarch','Sabbat','Independent','Autarkis','Cathedral of Cain','Unknown'] as const;
 
 export const CREATURE_KINDS: { value: CreatureKind; label: string; emoji: string }[] = [
   { value: 'kindred', label: 'Kindred (Vampire)', emoji: '🧛' },

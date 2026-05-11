@@ -274,11 +274,15 @@ export default function CharacterDetail() {
 function KindredInfo({ data }: { data: KindredData }) {
   const ts = data.touchstones ?? [];
   const bonds = data.blood_bonded_to ?? [];
-  if (ts.length === 0 && bonds.length === 0) return null;
+  const herd = data.herd ?? [];
+  const allies = data.mortal_allies ?? [];
+  if (ts.length === 0 && bonds.length === 0 && herd.length === 0 && allies.length === 0) return null;
   return (
     <section className="card border-blood/20 space-y-3">
       <h2 className="text-xl">🧛 Узы Kindred</h2>
       {ts.length > 0 && <KindredLinks ids={ts} title="Touchstones" emoji="✨" />}
+      {herd.length > 0 && <KindredLinks ids={herd} title="Стадо" emoji="🩸" />}
+      {allies.length > 0 && <KindredLinks ids={allies} title="Союзники-смертные" emoji="🤝" />}
       {bonds.length > 0 && <BloodBondsList bonds={bonds} />}
     </section>
   );

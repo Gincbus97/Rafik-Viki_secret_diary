@@ -126,8 +126,11 @@ function FactionCard({
   if (!expanded) {
     return (
       <button onClick={onToggle} className="text-left w-full">
-        <div className="flex items-center justify-between">
-          <p className="font-display text-lg">{faction.name}</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="font-display text-lg flex items-center gap-2">
+            {faction.icon && <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-ink border border-gold/40 text-base">{faction.icon}</span>}
+            {faction.name}
+          </p>
           <span className="chip">{faction.kind}</span>
         </div>
         {faction.description && <p className="subtle line-clamp-2 mt-1">{faction.description}</p>}
@@ -141,7 +144,7 @@ function FactionCard({
         <input className="input text-lg font-display flex-1" value={draft.name ?? ''} onChange={e => setDraft(d => ({...d, name: e.target.value}))} onBlur={() => save.mutate()} />
         <button onClick={onToggle} className="btn-ghost text-sm">свернуть</button>
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         <div>
           <label className="label">Тип</label>
           <select className="input" value={draft.kind ?? 'coterie'} onChange={e => { setDraft(d => ({...d, kind: e.target.value as FactionKind})); save.mutate(); }}>
@@ -154,6 +157,25 @@ function FactionCard({
             <option value="">— нет —</option>
             {characters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
+        </div>
+        <div>
+          <label className="label">Иконка (emoji)</label>
+          <div className="flex gap-2 items-center">
+            <input
+              className="input text-center"
+              maxLength={4}
+              placeholder="☩ ⚜ 🦇"
+              value={draft.icon ?? ''}
+              onChange={e => setDraft(d => ({...d, icon: e.target.value || null}))}
+              onBlur={() => save.mutate()}
+            />
+            {draft.icon && (
+              <span className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-ink border border-gold/40 text-base flex-shrink-0">
+                {draft.icon}
+              </span>
+            )}
+          </div>
+          <p className="text-[10px] text-ash mt-1">Появится на карте у каждого члена.</p>
         </div>
       </div>
       <div>

@@ -192,6 +192,12 @@ function SessionItem({
           <textarea className="input" value={draft.rel_changes ?? ''} onChange={e => setDraft(d => ({...d, rel_changes: e.target.value}))} onBlur={() => save.mutate()} />
         </div>
       </div>
+
+      {/* Галерея */}
+      <SessionGallery
+        images={Array.isArray(draft.images) ? draft.images : []}
+        onChange={(images) => { setDraft(d => ({...d, images})); save.mutate(); }}
+      />
       <div>
         <label className="label">Участники</label>
         <div className="flex flex-wrap gap-2 mb-2">
@@ -212,6 +218,63 @@ function SessionItem({
       <button className="btn-danger text-sm" onClick={() => { if (confirm('Удалить сессию?')) remove.mutate(); }}>
         Удалить сессию
       </button>
+    </div>
+  );
+}
+
+function SessionGallery({ images, onChange }: { images: string[]; onChange: (next: string[]) => void }) {
+  const [adding, setAdding] = useState('');
+  function add() {
+    const url = adding.trim();
+    if (!url) return;
+    onChange([...images, url]);
+    setAdding('');
+  }
+  function remove(idx: number) {
+    const next = [...images];
+    next.splice(idx, 1);
+    onChange(next);
+  }
+  return (
+    <div className="border-t border-gold/10 pt-3">
+      <label className="label">🖼️ Галерея сессии</label>
+      <p className="text-xs text-ash mb-2">
+        Вставь URL картинок, которые ИИ сгенерировал к сессии. Поддерживается прямая ссылка на jpg/png/webp.
+      </p>
+      {images.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mb-3">
+          {images.map((url, idx) => (
+            <div key={idx} className="relative group">
+              <a href={url} target="_blank" rel="noreferrer" className="block">
+                <img
+                  src={url}
+                  alt=""
+                  className="w-full aspect-square object-cover rounded-lg border border-gold/15 hover:border-gold/40 transition"
+                  onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0.3'; }}
+                />
+              </a>
+              <button
+                type="button"
+                onClick={() => { if (confirm('Убрать картинку?')) remove(idx); }}
+                className="absolute top-1 right-1 bg-ink/80 text-rose rounded-full w-6 h-6 opacity-0 group-hover:opacity-100 transition"
+                title="Убрать"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <input
+          className="input flex-1"
+          placeholder="https://..."
+          value={adding}
+          onChange={e => setAdding(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+        />
+        <button type="button" className="btn-ghost" onClick={add} disabled={!adding.trim()}>+ Добавить</button>
+      </div>
     </div>
   );
 }

@@ -103,6 +103,7 @@ export default function RelationshipTypesSettings() {
                 <th className="text-left p-3">Цвет</th>
                 <th className="text-left p-3">Пунктир</th>
                 <th className="text-left p-3">Толщина</th>
+                <th className="text-left p-3">Reciprocal</th>
                 <th className="text-left p-3">Скрыт из manual</th>
                 <th className="text-left p-3">Превью</th>
                 <th className="p-3"></th>
@@ -110,7 +111,7 @@ export default function RelationshipTypesSettings() {
             </thead>
             <tbody>
               {(types.data ?? []).map(t => (
-                <TypeRow key={t.id} type={t} />
+                <TypeRow key={t.id} type={t} allTypes={types.data ?? []} />
               ))}
             </tbody>
           </table>
@@ -120,7 +121,7 @@ export default function RelationshipTypesSettings() {
   );
 }
 
-function TypeRow({ type }: { type: RelationshipType }) {
+function TypeRow({ type, allTypes }: { type: RelationshipType; allTypes: RelationshipType[] }) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState(type);
 
@@ -206,6 +207,20 @@ function TypeRow({ type }: { type: RelationshipType }) {
           onChange={e => setDraft(s => ({ ...s, thickness: parseFloat(e.target.value) }))}
           onBlur={() => { if (draft.thickness !== type.thickness) save.mutate({ thickness: draft.thickness }); }}
         />
+      </td>
+      <td className="p-3 align-middle">
+        <select
+          className="input min-w-[140px]"
+          value={draft.reciprocal_name ?? ''}
+          onChange={e => patch('reciprocal_name', (e.target.value || null) as any)}
+          title="Если задано — при создании этой связи автоматически создаётся встречная указанного типа (для симметричной — себя). Пусто = односторонняя."
+        >
+          <option value="">— односторонняя —</option>
+          <option value={draft.name}>↻ симметричная (та же)</option>
+          {allTypes.filter(t => t.id !== draft.id).map(t => (
+            <option key={t.id} value={t.name}>{t.name}</option>
+          ))}
+        </select>
       </td>
       <td className="p-3 align-middle">
         <input

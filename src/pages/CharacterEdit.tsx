@@ -361,6 +361,8 @@ function KindredSection({
   const isCustomSect = !SECTS.includes(form.sect as any);
   const touchstones = kindData.touchstones ?? [];
   const bloodBonds = kindData.blood_bonded_to ?? [];
+  const herd = kindData.herd ?? [];
+  const allies = kindData.mortal_allies ?? [];
   const charsById = new Map(characters.map(c => [c.id, c]));
 
   function addTouchstone(cid: string) {
@@ -369,6 +371,20 @@ function KindredSection({
   }
   function removeTouchstone(cid: string) {
     setKindData({ touchstones: touchstones.filter(t => t !== cid) });
+  }
+  function addHerd(cid: string) {
+    if (!cid || herd.includes(cid)) return;
+    setKindData({ herd: [...herd, cid] });
+  }
+  function removeHerd(cid: string) {
+    setKindData({ herd: herd.filter(t => t !== cid) });
+  }
+  function addAlly(cid: string) {
+    if (!cid || allies.includes(cid)) return;
+    setKindData({ mortal_allies: [...allies, cid] });
+  }
+  function removeAlly(cid: string) {
+    setKindData({ mortal_allies: allies.filter(t => t !== cid) });
   }
   function addBond() {
     setKindData({ blood_bonded_to: [...bloodBonds, { character_id: '', level: 1 }] });
@@ -479,6 +495,52 @@ function KindredSection({
         <select className="input" value="" onChange={e => addTouchstone(e.target.value)}>
           <option value="">+ добавить touchstone…</option>
           {characters.filter(c => !touchstones.includes(c.id)).map(c => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Herd */}
+      <div className="border-t border-gold/10 pt-4">
+        <label className="label">Стадо — источники крови</label>
+        <p className="text-xs text-ash mb-2">
+          Смертные, на которых ты регулярно охотишься. Появятся на карте автоматически.
+        </p>
+        <div className="flex flex-wrap gap-2 mb-2">
+          {herd.length === 0 && <p className="subtle text-sm">Пусто.</p>}
+          {herd.map(cid => (
+            <span key={cid} className="chip">
+              {charsById.get(cid)?.name ?? '...'}
+              <button type="button" onClick={() => removeHerd(cid)} className="ml-1 text-rose">×</button>
+            </span>
+          ))}
+        </div>
+        <select className="input" value="" onChange={e => addHerd(e.target.value)}>
+          <option value="">+ добавить в стадо…</option>
+          {characters.filter(c => !herd.includes(c.id)).map(c => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Mortal Allies */}
+      <div className="border-t border-gold/10 pt-4">
+        <label className="label">Союзники-смертные</label>
+        <p className="text-xs text-ash mb-2">
+          V5 Allies — смертные, которые тебе помогают (журналисты, копы, врачи, охотники-конкуренты).
+        </p>
+        <div className="flex flex-wrap gap-2 mb-2">
+          {allies.length === 0 && <p className="subtle text-sm">Пусто.</p>}
+          {allies.map(cid => (
+            <span key={cid} className="chip">
+              {charsById.get(cid)?.name ?? '...'}
+              <button type="button" onClick={() => removeAlly(cid)} className="ml-1 text-rose">×</button>
+            </span>
+          ))}
+        </div>
+        <select className="input" value="" onChange={e => addAlly(e.target.value)}>
+          <option value="">+ добавить союзника…</option>
+          {characters.filter(c => !allies.includes(c.id)).map(c => (
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
