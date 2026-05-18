@@ -1,6 +1,6 @@
 // Секта теперь свободный текст; ниже SECTS — список преднастроенных.
 export type Sect = string;
-export type CreatureKind = 'kindred' | 'ghoul' | 'human' | 'other';
+export type CreatureKind = 'kindred' | 'ghoul' | 'human' | 'group' | 'other';
 export type LifeStatus = 'active' | 'dead' | 'torpor' | 'missing' | 'unknown';
 export type FactionKind = 'sect' | 'coterie' | 'cult' | 'package' | 'other';
 export type LocationKind =
@@ -56,6 +56,12 @@ export interface OtherData {
   type_label?: string;               // что это вообще такое: Werewolf? Mage? Spirit?
   notes?: string;
 }
+export interface GroupData {
+  size_estimate?: 'small' | 'medium' | 'large' | 'huge';
+  disposition?: 'friendly' | 'neutral' | 'hostile';
+  composition?: string;              // напр. "10 фанатиков с факелами"
+  leader_id?: string | null;         // ссылка на лидера-персонажа (если есть)
+}
 
 export interface Discipline { name: string; level: number; }
 
@@ -73,7 +79,8 @@ export interface Character {
   is_pc: boolean;
   kind: CreatureKind;
   life_status: LifeStatus;
-  kind_data: KindredData | GhoulData | HumanData | OtherData | Record<string, unknown>;
+  kind_data: KindredData | GhoulData | HumanData | OtherData | GroupData | Record<string, unknown>;
+  enemies: string[];                  // массив id персонажей-врагов
   portrait_url: string | null;
   clan: string | null;
   sect: Sect;
@@ -232,6 +239,7 @@ export const CREATURE_KINDS: { value: CreatureKind; label: string; emoji: string
   { value: 'kindred', label: 'Kindred (Vampire)', emoji: '🧛' },
   { value: 'ghoul',   label: 'Ghoul',             emoji: '🩸' },
   { value: 'human',   label: 'Human',             emoji: '👤' },
+  { value: 'group',   label: 'Group / Mob',       emoji: '👥' },
   { value: 'other',   label: 'Other',             emoji: '✨' },
 ];
 
@@ -239,8 +247,22 @@ export const KIND_SHORT: Record<CreatureKind, string> = {
   kindred: 'Vampire',
   ghoul:   'Ghoul',
   human:   'Human',
+  group:   'Group',
   other:   'Other',
 };
+
+export const GROUP_SIZES: { value: NonNullable<GroupData['size_estimate']>; label: string }[] = [
+  { value: 'small',  label: 'Малая (до 10)' },
+  { value: 'medium', label: 'Средняя (10–50)' },
+  { value: 'large',  label: 'Большая (50–200)' },
+  { value: 'huge',   label: 'Огромная (200+)' },
+];
+
+export const GROUP_DISPOSITIONS: { value: NonNullable<GroupData['disposition']>; label: string; emoji: string }[] = [
+  { value: 'friendly', label: 'Дружественная',  emoji: '🤝' },
+  { value: 'neutral',  label: 'Нейтральная',    emoji: '⚖️' },
+  { value: 'hostile',  label: 'Враждебная',     emoji: '⚔️' },
+];
 
 export const PREDATOR_TYPES = [
   'Alleycat','Bagger','Blood Leech','Cleaver','Consensualist','Farmer',

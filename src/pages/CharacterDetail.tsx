@@ -4,9 +4,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import {
-  KIND_SHORT, LIFE_STATUSES,
+  KIND_SHORT, LIFE_STATUSES, GROUP_SIZES, GROUP_DISPOSITIONS,
   type Character, type Quest, type Faction, type LocationItem,
-  type KindredData, type GhoulData, type HumanData, type OtherData,
+  type KindredData, type GhoulData, type HumanData, type OtherData, type GroupData,
 } from '@/lib/types';
 import Avatar from '@/components/Avatar';
 import RelationshipsBlock from '@/components/RelationshipsBlock';
@@ -165,7 +165,13 @@ export default function CharacterDetail() {
       {c.kind === 'kindred' && <KindredInfo data={c.kind_data as KindredData} />}
       {c.kind === 'ghoul' && <GhoulInfo data={c.kind_data as GhoulData} />}
       {c.kind === 'human' && <HumanInfo data={c.kind_data as HumanData} />}
+      {c.kind === 'group' && <GroupInfo data={c.kind_data as GroupData} />}
       {c.kind === 'other' && <OtherInfo data={c.kind_data as OtherData} />}
+
+      {/* Враги — общая секция для всех типов */}
+      {Array.isArray(c.enemies) && c.enemies.length > 0 && (
+        <EnemiesInfo ids={c.enemies} />
+      )}
 
       <div className="grid lg:grid-cols-3 gap-4">
         <section className="card lg:col-span-2 space-y-3">
@@ -391,6 +397,60 @@ function HumanInfo({ data }: { data: HumanData }) {
             <span className="chip border-blood/40 bg-blood/10 text-rose">⚠ Знает о Kindred (Masquerade aware)</span>
           </div>
         )}
+      </div>
+    </section>
+  );
+}
+
+function GroupInfo({ data }: { data: GroupData }) {
+  if (!data.size_estimate && !data.disposition && !data.composition && !data.leader_id) return null;
+  const size = GROUP_SIZES.find(s => s.value === data.size_estimate);
+  const disp = GROUP_DISPOSITIONS.find(d => d.value === data.disposition);
+  return (
+    <section className="card border-gold/30 border-double border-[3px]">
+      <h2 className="text-xl mb-2">👥 Group / Mob</h2>
+      <div className="grid sm:grid-cols-2 gap-3 text-sm">
+        {size && <div><span className="label !inline">Размер:</span> <span className="text-bone">{size.label}</span></div>}
+        {disp && (
+          <div>
+            <span className="label !inline">Отношение к PC:</span>{' '}
+            <span className={`chip ${disp.value === 'hostile' ? 'text-rose border-rose/40' : disp.value === 'friendly' ? 'text-bone border-emerald-700/40' : ''}`}>
+              {disp.emoji} {disp.label}
+            </span>
+          </div>
+        )}
+        {data.composition && (
+          <div className="sm:col-span-2">
+            <span className="label !inline">Состав:</span>{' '}
+            <span className="text-bone whitespace-pre-wrap">{data.composition}</span>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function EnemiesInfo({ ids }: { ids: string[] }) {
+  const list = useQuery({
+    queryKey: ['enemies-batch', ids.join(',')],
+    queryFn: async () => {
+      if (ids.length === 0) return [];
+      const { data, error } = await supabase
+        .from('characters').select('id,name,is_pc').in('id', ids);
+      if (error) throw error;
+      return data as unknown as { id: string; name: string; is_pc: boolean }[];
+    },
+    enabled: ids.length > 0,
+  });
+  return (
+    <section className="card border-rose/30">
+      <h2 className="text-xl mb-2">⚔️ Враги</h2>
+      <div className="flex flex-wrap gap-2">
+        {(list.data ?? []).map(c => (
+          <Link key={c.id} to={`/characters/${c.id}`} className="chip border-rose/40 bg-rose/10 text-rose hover:bg-rose/20 transition">
+            {c.name}{c.is_pc && <span className="ml-1 text-bone">PC</span>}
+          </Link>
+        ))}
       </div>
     </section>
   );

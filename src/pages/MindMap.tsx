@@ -24,7 +24,7 @@ interface RelEdge extends Relationship {
 }
 
 type CharMM = Pick<Character,
-  'id'|'name'|'is_pc'|'kind'|'clan'|'sect'|'portrait_url'|'mindmap_x'|'mindmap_y'|'sire_id'|'kind_data'|'life_status'
+  'id'|'name'|'is_pc'|'kind'|'clan'|'sect'|'portrait_url'|'mindmap_x'|'mindmap_y'|'sire_id'|'kind_data'|'life_status'|'enemies'
 >;
 
 // =============================== Локальные смещения рёбер (localStorage) ===============================
@@ -57,12 +57,13 @@ function CharacterNode({ data }: {
   if (data.is_pc) borderClass = 'border-[3px] border-black ring-2 ring-bone/60';
   else if (data.kind === 'human') borderClass = 'border-2 border-sky-500/80';
   else if (data.kind === 'kindred' || data.kind === 'ghoul') borderClass = 'border-2 border-bloodlight';
+  else if (data.kind === 'group') borderClass = 'border-[3px] border-double border-gold/70 ring-1 ring-gold/20';
 
   const ring = data.selected ? 'outline outline-2 outline-rose outline-offset-2' : '';
   const dim = data.life_status && data.life_status !== 'active' ? 'opacity-70 grayscale-[40%]' : '';
 
   return (
-    <div className={`relative bg-crypt rounded-xl shadow-crypt px-3 py-2 min-w-[180px] ${borderClass} ${ring} ${dim}`}>
+    <div className={`relative bg-crypt rounded-xl shadow-crypt px-3 py-2 ${data.kind === 'group' ? 'min-w-[220px]' : 'min-w-[180px]'} ${borderClass} ${ring} ${dim}`}>
       <Handle id="t"  type="source" position={Position.Top}    style={handleStyle} />
       <Handle id="r"  type="source" position={Position.Right}  style={handleStyle} />
       <Handle id="b"  type="source" position={Position.Bottom} style={handleStyle} />
@@ -77,15 +78,19 @@ function CharacterNode({ data }: {
           <img src={data.portrait_url} alt="" className="w-11 h-11 rounded-lg object-cover" />
         ) : (
           <div className="w-11 h-11 rounded-lg bg-velvet flex items-center justify-center text-bone">
-            {data.name?.[0]?.toUpperCase() ?? '?'}
+            {data.kind === 'group' ? '👥' : (data.name?.[0]?.toUpperCase() ?? '?')}
           </div>
         )}
         <div className="min-w-0">
           <div className="font-display text-base leading-tight truncate text-bone">{data.name}</div>
           <div className="text-[10px] text-ash leading-tight truncate">
-            {data.is_pc ? 'PC' : 'NPC'}
-            {data.kind && data.kind !== 'kindred' ? ` · ${data.kind}` : ''}
-            {data.clan ? ` · ${data.clan}` : ''}
+            {data.kind === 'group' ? 'Group / Mob' : (
+              <>
+                {data.is_pc ? 'PC' : 'NPC'}
+                {data.kind && data.kind !== 'kindred' ? ` · ${data.kind}` : ''}
+                {data.clan ? ` · ${data.clan}` : ''}
+              </>
+            )}
           </div>
           {data.subtitle && (
             <div className="text-[10px] text-rose italic mt-0.5 truncate">{data.subtitle}</div>
@@ -244,7 +249,7 @@ export default function MindMap() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('characters')
-        .select('id,name,is_pc,kind,clan,sect,portrait_url,mindmap_x,mindmap_y,life_status,sire_id,kind_data')
+        .select('id,name,is_pc,kind,clan,sect,portrait_url,mindmap_x,mindmap_y,life_status,sire_id,kind_data,enemies')
         .order('name');
       if (error) throw error;
       return data as unknown as CharMM[];
@@ -494,6 +499,22 @@ export default function MindMap() {
             type_id: t.id,
             description: null, started_at_date: null, started_at_session: null,
             strength: 2, created_by: null, created_at: '',
+            type: { id: t.id, name: t.name, category: t.category, color: t.color, dashed: t.dashed, thickness: t.thickness },
+          });
+        }
+      }
+      // Enemies (общее для всех kinds, лежит в characters.enemies)
+      if (Array.isArray(c.enemies) && c.enemies.length > 0) {
+        const t = findType('Враг') ?? findType('Enemy');
+        for (const eid of c.enemies) {
+          if (!eid || !t) continue;
+          synthesized.push({
+            id: `synth-enemy-${c.id}-${eid}`,
+            from_character_id: c.id,
+            to_character_id: eid,
+            type_id: t.id,
+            description: null, started_at_date: null, started_at_session: null,
+            strength: 4, created_by: null, created_at: '',
             type: { id: t.id, name: t.name, category: t.category, color: t.color, dashed: t.dashed, thickness: t.thickness },
           });
         }
@@ -772,6 +793,7 @@ export default function MindMap() {
               nodeColor={(n) => {
                 const d = n.data as any;
                 if (d?.is_pc) return '#000';
+                if (d?.kind === 'group') return '#c8a96a';
                 if (d?.kind === 'human') return '#3b82f6';
                 return '#c0233a';
               }}
@@ -928,6 +950,7 @@ function Legend() {
       <span className="chip border-black/80 bg-black/40">⬛ PC</span>
       <span className="chip border-bloodlight bg-blood/15">🟥 Vampire/Ghoul</span>
       <span className="chip border-sky-500/80 bg-sky-500/10">🟦 Human</span>
+      <span className="chip border-gold/70 border-double bg-gold/5">👥 Group</span>
       <span className="chip">— механика</span>
       <span className="chip" style={{ borderStyle: 'dashed' }}>--- личное</span>
     </div>

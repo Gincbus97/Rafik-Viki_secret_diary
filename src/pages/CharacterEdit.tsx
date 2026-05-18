@@ -5,13 +5,14 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import {
   CLANS, SECTS, DEFAULT_DISCIPLINES, CREATURE_KINDS, LIFE_STATUSES,
-  CLAN_BANES, CLAN_COMPULSIONS,
+  CLAN_BANES, CLAN_COMPULSIONS, GROUP_SIZES, GROUP_DISPOSITIONS,
   type Character, type Discipline, type LocationItem, type CreatureKind, type LifeStatus,
-  type KindredData, type GhoulData, type HumanData, type OtherData,
+  type KindredData, type GhoulData, type HumanData, type OtherData, type GroupData,
 } from '@/lib/types';
 
 const EMPTY: Partial<Character> = {
   name: '', is_pc: false, kind: 'kindred', life_status: 'active', kind_data: {},
+  enemies: [],
   portrait_url: '', clan: '', sect: 'Unknown',
   generation: null, sire_id: null, embrace_age: '', status_in_sect: '',
   location_id: null, short_desc: '', biography: '',
@@ -239,6 +240,21 @@ export default function CharacterEdit({ mode }: Props) {
       {kind === 'other' && (
         <OtherSection kindData={kindData} setKindData={setKindData} />
       )}
+
+      {kind === 'group' && (
+        <GroupSection
+          kindData={kindData as GroupData}
+          setKindData={setKindData}
+          characters={(characters.data ?? []).filter(c => c.id !== id)}
+        />
+      )}
+
+      {/* Враги — общее поле для всех типов */}
+      <EnemiesSection
+        enemies={form.enemies ?? []}
+        setEnemies={(next) => set('enemies', next as Character['enemies'])}
+        characters={(characters.data ?? []).filter(c => c.id !== id)}
+      />
 
       {/* ---------- Disciplines (видимы у Kindred и Ghoul) ---------- */}
       {(kind === 'kindred' || kind === 'ghoul') && (
@@ -693,6 +709,112 @@ function HumanSection({
           </label>
         </div>
       </div>
+    </section>
+  );
+}
+
+// =============================== Group / Mob ===============================
+function GroupSection({
+  kindData, setKindData, characters,
+}: {
+  kindData: GroupData;
+  setKindData: (p: Record<string, unknown>) => void;
+  characters: Pick<Character,'id'|'name'>[];
+}) {
+  return (
+    <section className="card space-y-4 border-gold/30 border-double border-[3px]">
+      <h2 className="text-xl">👥 Group / Mob</h2>
+      <p className="subtle text-sm">
+        Безликая толпа смертных как единая сущность — банда, отряд полиции,
+        охотничий ковен, толпа протестующих, оперативная группа. Появится на карте
+        как один узел с двойной рамкой.
+      </p>
+      <div className="grid md:grid-cols-2 gap-4">
+        <div>
+          <label className="label">Размер</label>
+          <select
+            className="input"
+            value={kindData.size_estimate ?? 'small'}
+            onChange={e => setKindData({ size_estimate: e.target.value })}
+          >
+            {GROUP_SIZES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label">Отношение к PC</label>
+          <select
+            className="input"
+            value={kindData.disposition ?? 'neutral'}
+            onChange={e => setKindData({ disposition: e.target.value })}
+          >
+            {GROUP_DISPOSITIONS.map(d => (
+              <option key={d.value} value={d.value}>{d.emoji} {d.label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="md:col-span-2">
+          <label className="label">Состав</label>
+          <textarea
+            className="input min-h-[60px]"
+            placeholder="напр. 12 фанатиков с факелами, 3 стрелка, 1 вожак на пикапе"
+            value={kindData.composition ?? ''}
+            onChange={e => setKindData({ composition: e.target.value })}
+          />
+        </div>
+        <div className="md:col-span-2">
+          <label className="label">Лидер (если есть)</label>
+          <select
+            className="input"
+            value={kindData.leader_id ?? ''}
+            onChange={e => setKindData({ leader_id: e.target.value || null })}
+          >
+            <option value="">— нет / коллективный —</option>
+            {characters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// =============================== Враги (общий для всех kind) ===============================
+function EnemiesSection({
+  enemies, setEnemies, characters,
+}: {
+  enemies: string[];
+  setEnemies: (next: string[]) => void;
+  characters: Pick<Character,'id'|'name'>[];
+}) {
+  const charsById = new Map(characters.map(c => [c.id, c]));
+  function add(cid: string) {
+    if (!cid || enemies.includes(cid)) return;
+    setEnemies([...enemies, cid]);
+  }
+  function remove(cid: string) {
+    setEnemies(enemies.filter(e => e !== cid));
+  }
+  return (
+    <section className="card border-rose/30 space-y-2">
+      <h2 className="text-xl">⚔️ Враги</h2>
+      <p className="subtle text-sm">
+        Кого этот персонаж считает врагом. Появятся на карте красной враждебной стрелкой.
+        Это <b>одностороннее</b> чувство — если враждуют обоюдно, пропиши с обеих сторон.
+      </p>
+      <div className="flex flex-wrap gap-2 mb-2">
+        {enemies.length === 0 && <p className="subtle text-sm">Никаких врагов. Пока что.</p>}
+        {enemies.map(eid => (
+          <span key={eid} className="chip border-rose/40 bg-rose/10 text-rose">
+            {charsById.get(eid)?.name ?? '...'}
+            <button type="button" onClick={() => remove(eid)} className="ml-1">×</button>
+          </span>
+        ))}
+      </div>
+      <select className="input" value="" onChange={e => add(e.target.value)}>
+        <option value="">+ добавить врага…</option>
+        {characters.filter(c => !enemies.includes(c.id)).map(c => (
+          <option key={c.id} value={c.id}>{c.name}</option>
+        ))}
+      </select>
     </section>
   );
 }
