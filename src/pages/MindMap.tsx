@@ -10,6 +10,8 @@ import {
   BaseEdge, EdgeLabelRenderer, useReactFlow,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import { toPng } from 'html-to-image';
+import jsPDF from 'jspdf';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { createRelWithReciprocal } from '@/lib/relationships';
@@ -215,7 +217,8 @@ function ChronicleEdge(props: EdgeProps) {
       {/* Видимая ручка для перетаскивания середины ребра */}
       <EdgeLabelRenderer>
         <div
-          className="nodrag nopan pointer-events-auto"
+          className="nodrag nopan pointer-events-auto chronicle-edge-handle"
+          data-export-hide="1"
           onPointerDown={onPointerDown}
           title="Перетащи, чтобы изогнуть"
           style={{
@@ -654,6 +657,136 @@ export default function MindMap() {
     qc.invalidateQueries({ queryKey: ['mm-relationships'] });
   }, [characters.data, qc]);
 
+  // ------------------ Экспорт PDF ------------------
+  const [exporting, setExporting] = useState(false);
+
+  const exportPdf = useCallback(async () => {
+    if (rfNodes.length === 0) {
+      alert('На карте никого нет — добавь персонажей или ослабь фильтры.');
+      return;
+    }
+    try {
+      setExporting(true);
+
+      const viewportEl = document.querySelector('.react-flow__viewport') as HTMLElement | null;
+      if (!viewportEl) throw new Error('Не нашли viewport React Flow');
+
+      // Считаем bounding box всех узлов (берём width/height из DOM, если уже измерены)
+      const nodeEls = Array.from(document.querySelectorAll<HTMLElement>('.react-flow__node'));
+      const sizeById = new Map<string, { w: number; h: number }>();
+      for (const el of nodeEls) {
+        const id = el.getAttribute('data-id');
+        if (!id) continue;
+        sizeById.set(id, { w: el.offsetWidth || 200, h: el.offsetHeight || 80 });
+      }
+
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const n of rfNodes) {
+        const s = sizeById.get(n.id) ?? { w: (n as any).width ?? 200, h: (n as any).height ?? 80 };
+        minX = Math.min(minX, n.position.x);
+        minY = Math.min(minY, n.position.y);
+        maxX = Math.max(maxX, n.position.x + s.w);
+        maxY = Math.max(maxY, n.position.y + s.h);
+      }
+      const pad = 80;
+      const graphW = Math.max(600, maxX - minX);
+      const graphH = Math.max(400, maxY - minY);
+      const totalW = graphW + pad * 2;
+      const totalH = graphH + pad * 2;
+
+      // Рендерим viewport в PNG. Сбрасываем transform — html-to-image берёт inline-style.
+      const dataUrl = await toPng(viewportEl, {
+        backgroundColor: '#0c0608',
+        width: totalW,
+        height: totalH,
+        pixelRatio: 2,
+        cacheBust: true,
+        style: {
+          width: `${totalW}px`,
+          height: `${totalH}px`,
+          transform: `translate(${-minX + pad}px, ${-minY + pad}px) scale(1)`,
+          transformOrigin: 'top left',
+        },
+        filter: (node) => {
+          // Прячем ручки-перетаскивашки рёбер (маленькие кружки под подписями)
+          if ((node as HTMLElement)?.dataset?.exportHide === '1') return false;
+          return true;
+        },
+      });
+
+      // Собираем PDF (A4 landscape; вписываем картинку сохраняя пропорции)
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+
+      // Фон цвета крипта
+      pdf.setFillColor(12, 6, 8);
+      pdf.rect(0, 0, pageW, pageH, 'F');
+
+      // Заголовок
+      pdf.setTextColor(232, 226, 212);
+      pdf.setFontSize(14);
+      pdf.text('Vampire: The Masquerade - Mind Map', 24, 28);
+
+      // Под-заголовок: дата + активные фильтры
+      const filters: string[] = [];
+      if (showPcOnly) filters.push('PC only');
+      if (hideTheDead) filters.push('hide dead');
+      if (clanFilter) filters.push(`clan: ${clanFilter}`);
+      if (factionFilter) {
+        const f = (factions.data ?? []).find(x => x.id === factionFilter);
+        if (f) filters.push(`faction: ${f.name}`);
+      }
+      if (focusMode === 'one' && focusId) {
+        const c = (characters.data ?? []).find(x => x.id === focusId);
+        if (c) filters.push(`focus: ${c.name} (${hops} hop${hops > 1 ? 's' : ''})`);
+      }
+      if (categoryFilter !== 'all') {
+        filters.push(`category: ${categoryFilter}`);
+      }
+      if (minStrength > 1) filters.push(`strength >= ${minStrength}`);
+      if (!showTypes) filters.push('no type labels');
+      if (!showDescriptions) filters.push('no descriptions');
+
+      const dateStr = new Date().toLocaleString('ru-RU');
+      pdf.setFontSize(9);
+      pdf.setTextColor(168, 156, 155);
+      pdf.text(dateStr, 24, 44);
+      if (filters.length > 0) {
+        // Перенос длинной строки фильтров вручную
+        const filtersLine = pdf.splitTextToSize('Filters: ' + filters.join(' / '), pageW - 200);
+        pdf.text(filtersLine, 200, 44);
+      }
+
+      // Область для картинки
+      const areaX = 24;
+      const areaY = 56;
+      const areaW = pageW - 48;
+      const areaH = pageH - 76;
+
+      const aspect = totalW / totalH;
+      let drawW = areaW;
+      let drawH = areaW / aspect;
+      if (drawH > areaH) {
+        drawH = areaH;
+        drawW = areaH * aspect;
+      }
+      const drawX = areaX + (areaW - drawW) / 2;
+      const drawY = areaY + (areaH - drawH) / 2;
+
+      pdf.addImage(dataUrl, 'PNG', drawX, drawY, drawW, drawH, undefined, 'FAST');
+
+      const fname = `chronicle-map-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.pdf`;
+      pdf.save(fname);
+    } catch (e: any) {
+      console.error(e);
+      alert('Не удалось выгрузить PDF: ' + (e?.message ?? String(e)) +
+        '\n\nЧасто помогает: 1) нажать "Авто-раскладка" и попробовать снова; 2) убедиться, что портреты ссылаются на CORS-разрешённые источники (Imgur, Supabase Storage).');
+    } finally {
+      setExporting(false);
+    }
+  }, [rfNodes, showPcOnly, hideTheDead, clanFilter, factionFilter, factions.data, focusMode, focusId, hops, categoryFilter, minStrength, showTypes, showDescriptions, characters.data]);
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -754,6 +887,15 @@ export default function MindMap() {
           </button>
           <button type="button" onClick={resetPositions} className="btn-ghost text-sm" title="Сбросить позиции и изгибы">
             ↻ Авто-раскладка
+          </button>
+          <button
+            type="button"
+            onClick={exportPdf}
+            disabled={exporting}
+            className="btn-primary text-sm"
+            title="Скачать текущую карту в PDF (с учётом фильтров)"
+          >
+            {exporting ? '⏳ Готовим PDF…' : '📄 Экспорт PDF'}
           </button>
         </div>
       </div>
