@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, useRef, FormEvent } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef, FormEvent, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -66,14 +66,15 @@ function CharacterNode({ data }: {
 
   return (
     <div className={`relative bg-crypt rounded-xl shadow-crypt px-3 py-2 ${data.kind === 'group' ? 'min-w-[220px]' : 'min-w-[180px]'} ${borderClass} ${ring} ${dim}`}>
-      <Handle id="t"  type="source" position={Position.Top}    style={handleStyle} />
-      <Handle id="r"  type="source" position={Position.Right}  style={handleStyle} />
-      <Handle id="b"  type="source" position={Position.Bottom} style={handleStyle} />
-      <Handle id="l"  type="source" position={Position.Left}   style={handleStyle} />
-      <Handle id="t2" type="target" position={Position.Top}    style={{ ...handleStyle, opacity: 0 }} />
-      <Handle id="r2" type="target" position={Position.Right}  style={{ ...handleStyle, opacity: 0 }} />
-      <Handle id="b2" type="target" position={Position.Bottom} style={{ ...handleStyle, opacity: 0 }} />
-      <Handle id="l2" type="target" position={Position.Left}   style={{ ...handleStyle, opacity: 0 }} />
+      {/* target-хэндлы рендерим ПЕРВЫМИ и делаем inert: нужны только как якоря для рисования рёбер, не должны перехватывать pointer-события и инвертировать направление */}
+      <Handle id="t2" type="target" position={Position.Top}    style={targetHandleStyle} />
+      <Handle id="r2" type="target" position={Position.Right}  style={targetHandleStyle} />
+      <Handle id="b2" type="target" position={Position.Bottom} style={targetHandleStyle} />
+      <Handle id="l2" type="target" position={Position.Left}   style={targetHandleStyle} />
+      <Handle id="t"  type="source" position={Position.Top}    style={sourceHandleStyle} />
+      <Handle id="r"  type="source" position={Position.Right}  style={sourceHandleStyle} />
+      <Handle id="b"  type="source" position={Position.Bottom} style={sourceHandleStyle} />
+      <Handle id="l"  type="source" position={Position.Left}   style={sourceHandleStyle} />
 
       <div className="flex items-center gap-2">
         {data.portrait_url ? (
@@ -116,12 +117,30 @@ function CharacterNode({ data }: {
   );
 }
 const handleStyle = { width: 8, height: 8, background: '#8a0e1a', border: '1px solid #c8a96a' } as const;
+// Source-хэндлы видимые, перехватывают pointer-события и лежат сверху (zIndex выше).
+const sourceHandleStyle = { ...handleStyle, zIndex: 2 } as const;
+// Target-хэндлы — невидимые "якоря" для рисования рёбер.
+// pointerEvents:'none' критично: иначе они оказываются drop-/start-целью и React Flow
+// в Loose-режиме инвертирует source/target (баг "PC→NPC становится NPC→PC").
+const targetHandleStyle = { ...handleStyle, opacity: 0, pointerEvents: 'none' as const, zIndex: 0 } as const;
+
+// Стиль SVG-текста, идущего вдоль ребра. paintOrder:'stroke' нет в React.CSSProperties,
+// поэтому собираем стиль через cast.
+const textAlongLineStyle = {
+  fontSize: 10,
+  fontFamily: 'Inter, sans-serif',
+  paintOrder: 'stroke',
+  pointerEvents: 'none',
+  userSelect: 'none',
+  fontWeight: 600,
+  letterSpacing: 0.2,
+} as unknown as CSSProperties;
 
 // =============================== Кастомное изгибаемое ребро ===============================
 function ChronicleEdge(props: EdgeProps) {
   const {
     id, sourceX, sourceY, targetX, targetY,
-    markerEnd, markerStart, style, label, labelStyle, labelBgStyle, data,
+    markerEnd, markerStart, style, data,
   } = props;
   const { screenToFlowPosition } = useReactFlow();
 
@@ -149,11 +168,31 @@ function ChronicleEdge(props: EdgeProps) {
   const cx = baseMx + nx * autoOffset + stored.dx;
   const cy = baseMy + ny * autoOffset + stored.dy;
 
-  // Quadratic Bezier
+  // Quadratic Bezier — визуальное ребро
   const path = `M ${sourceX} ${sourceY} Q ${cx} ${cy} ${targetX} ${targetY}`;
+  // Если стрелка идёт справа-налево или снизу-вверх — для textPath используем «развёрнутый» путь,
+  // чтобы буквы не оказались вверх ногами.
+  const textReversed = (targetX < sourceX) || (Math.abs(targetX - sourceX) < 1 && targetY < sourceY);
+  const textPathD = textReversed
+    ? `M ${targetX} ${targetY} Q ${cx} ${cy} ${sourceX} ${sourceY}`
+    : path;
+  const textPathId = `edge-textpath-${id}`;
+
   // Точка на середине кривой (t = 0.5)
   const midX = 0.25 * sourceX + 0.5 * cx + 0.25 * targetX;
   const midY = 0.25 * sourceY + 0.5 * cy + 0.25 * targetY;
+
+  // Подписи из data (передаются раздельно из buildEdge)
+  const typeName: string = ((data as any)?.typeName ?? '') as string;
+  const description: string = ((data as any)?.description ?? '') as string;
+  const strokeColor: string = ((style as any)?.stroke ?? '#a89c9b') as string;
+
+  // Описание сдвигаем перпендикулярно от линии — в ту же сторону, что и изгиб
+  // (для parallelIdx=0 — фиксированно вверх-вправо). Так пузырь не сидит на тексте-вдоль-линии.
+  const descPerp = 26;
+  const sign = autoOffset === 0 ? 1 : (autoOffset > 0 ? 1 : -1);
+  const descX = midX + nx * descPerp * sign;
+  const descY = midY + ny * descPerp * sign;
 
   const draggingRef = useRef<{ startFx: number; startFy: number; baseDx: number; baseDy: number } | null>(null);
 
@@ -189,31 +228,56 @@ function ChronicleEdge(props: EdgeProps) {
 
   return (
     <>
+      {/* Невидимый путь специально для textPath — чтобы буквы шли по нему слева-направо */}
+      <defs>
+        <path id={textPathId} d={textPathD} fill="none" />
+      </defs>
       <BaseEdge id={id} path={path} markerEnd={markerEnd} markerStart={markerStart} style={style} />
-      {label && (
+
+      {/* Название типа — вдоль линии, цветом ребра, с тёмной обводкой для читаемости поверх фона */}
+      {typeName && (
+        <text
+          dy={-5}
+          fill={strokeColor}
+          stroke="#0c0608"
+          strokeWidth={3}
+          strokeLinejoin="round"
+          style={textAlongLineStyle}
+        >
+          <textPath href={`#${textPathId}`} startOffset="50%" textAnchor="middle">
+            {typeName}
+          </textPath>
+        </text>
+      )}
+
+      {/* Описание — отдельный пузырь, сдвинутый перпендикулярно от линии и с цветной полоской слева,
+          чтобы глаз сразу видел, к какому ребру он относится */}
+      {description && (
         <EdgeLabelRenderer>
           <div
             className="nodrag nopan pointer-events-auto"
             style={{
               position: 'absolute',
-              transform: `translate(-50%, -50%) translate(${midX}px, ${midY}px)`,
-              padding: '2px 6px',
+              transform: `translate(-50%, -50%) translate(${descX}px, ${descY}px)`,
+              padding: '3px 7px',
               borderRadius: 4,
-              background: '#1d1014',
-              border: '1px solid rgba(200,169,106,0.25)',
+              background: 'rgba(29,16,20,0.92)',
+              border: `1px solid ${strokeColor}55`,
+              borderLeft: `3px solid ${strokeColor}`,
               fontSize: 10,
               color: '#e8e2d4',
               fontFamily: 'Inter, sans-serif',
-              maxWidth: 260,
+              maxWidth: 200,
               whiteSpace: 'pre-wrap',
-              ...labelStyle,
-              ...labelBgStyle,
+              lineHeight: 1.25,
+              boxShadow: '0 1px 4px rgba(0,0,0,0.55)',
             }}
           >
-            {label}
+            {description}
           </div>
         </EdgeLabelRenderer>
       )}
+
       {/* Видимая ручка для перетаскивания середины ребра */}
       <EdgeLabelRenderer>
         <div
@@ -611,7 +675,10 @@ export default function MindMap() {
 
   const sig = useMemo(() => {
     const ns = computed.nodes.map(n => `${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${(n.data as any)?.selected ? 1 : 0}:${n.draggable ? 1 : 0}`).join('|');
-    const es = computed.edges.map(e => `${e.id}:${e.source}:${e.target}:${e.label ?? ''}:${(e.data as any)?.parallelIdx ?? 0}:${e.style?.strokeDasharray ?? ''}`).join('~');
+    const es = computed.edges.map(e => {
+      const d = (e.data as any) ?? {};
+      return `${e.id}:${e.source}:${e.target}:${d.typeName ?? ''}:${d.description ?? ''}:${d.parallelIdx ?? 0}:${e.style?.strokeDasharray ?? ''}`;
+    }).join('~');
     return ns + '#' + es;
   }, [computed]);
   const lastSig = useRef('');
@@ -1014,7 +1081,6 @@ function buildEdge(
         : typeName)
     : '';
   const desc = (showDescription && r.description) ? r.description : '';
-  const label = [titleLine, desc].filter(Boolean).join('\n');
 
   const { sourceHandle, targetHandle } = pickHandles(
     posById.get(r.from_character_id),
@@ -1032,7 +1098,7 @@ function buildEdge(
     target: r.to_character_id,
     sourceHandle,
     targetHandle,
-    label,
+    // label больше не используем — ChronicleEdge сам рендерит typeName (вдоль линии) и description (в пузыре сбоку)
     type: 'chronicle',
     style: {
       stroke: color,
@@ -1042,7 +1108,12 @@ function buildEdge(
     },
     markerEnd: { type: MarkerType.ArrowClosed, color },
     markerStart: isBidirectional ? { type: MarkerType.ArrowClosed, color } : undefined,
-    data: { parallelIdx, isBidirectional, description: r.description },
+    data: {
+      parallelIdx,
+      isBidirectional,
+      typeName: titleLine,
+      description: desc,
+    },
   };
 }
 
