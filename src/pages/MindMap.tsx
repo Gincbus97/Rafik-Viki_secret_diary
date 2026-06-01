@@ -189,6 +189,12 @@ function ChronicleEdge(props: EdgeProps) {
   // tooltip — массив сторон связи (для двунаправленных: обе стороны с их описаниями)
   const tooltip = (((data as any)?.tooltip ?? []) as { dir: string; type: string; desc: string }[]);
   const hasTip = tooltip.some(t => t.type || t.desc);
+  // persistent (тумблер «показывать описание» нажат) → подпись висит всегда; иначе — при наведении
+  const persistent = !!(data as any)?.persistent;
+  // В постоянном режиме показываем только стороны с описанием (чтобы не плодить пустые пузыри),
+  // при наведении — все стороны (тип полезен, даже если описания нет).
+  const bubbleItems = hovered ? tooltip.filter(t => t.type || t.desc) : tooltip.filter(t => t.desc);
+  const showBubble = (hovered || persistent) && bubbleItems.length > 0;
   const strokeColor: string = ((style as any)?.stroke ?? '#a89c9b') as string;
 
   // Описание сдвигаем перпендикулярно от линии — в ту же сторону, что и изгиб
@@ -265,9 +271,10 @@ function ChronicleEdge(props: EdgeProps) {
         </text>
       )}
 
-      {/* Тултип при наведении: тип + описание. Для двунаправленных рёбер — обе стороны,
-          чтобы ничего не терялось и подписи не наезжали на граф. */}
-      {hovered && hasTip && (
+      {/* Подпись с описанием. Тумблер «показывать описание» нажат → висит постоянно
+          (и попадает в картинку PDF); иначе — появляется при наведении.
+          Для двунаправленных рёбер показываются обе стороны, чтобы ничего не терялось. */}
+      {showBubble && (
         <EdgeLabelRenderer>
           <div
             className="nodrag nopan"
@@ -276,21 +283,21 @@ function ChronicleEdge(props: EdgeProps) {
               transform: `translate(-50%, -50%) translate(${descX}px, ${descY}px)`,
               padding: '6px 9px',
               borderRadius: 6,
-              background: 'rgba(20,11,15,0.97)',
+              background: persistent && !hovered ? 'rgba(20,11,15,0.9)' : 'rgba(20,11,15,0.97)',
               border: `1px solid ${strokeColor}77`,
               borderLeft: `3px solid ${strokeColor}`,
-              fontSize: 11,
+              fontSize: persistent && !hovered ? 10 : 11,
               color: '#e8e2d4',
               fontFamily: 'Inter, sans-serif',
-              maxWidth: 240,
+              maxWidth: persistent && !hovered ? 200 : 240,
               whiteSpace: 'pre-wrap',
               lineHeight: 1.3,
               boxShadow: '0 2px 10px rgba(0,0,0,0.7)',
               pointerEvents: 'none',
-              zIndex: 1000,
+              zIndex: hovered ? 1000 : 5,
             }}
           >
-            {tooltip.filter(t => t.type || t.desc).map((t, i, arr) => (
+            {bubbleItems.map((t, i, arr) => (
               <div key={i} style={{ marginBottom: i < arr.length - 1 ? 7 : 0 }}>
                 <div style={{ color: strokeColor, fontWeight: 600 }}>
                   {t.dir}{t.type ? ` · ${t.type}` : ''}
@@ -704,7 +711,7 @@ export default function MindMap() {
     const es = computed.edges.map(e => {
       const d = (e.data as any) ?? {};
       const tip = (d.tooltip ?? []).map((t: any) => `${t.type}|${t.desc}`).join(';');
-      return `${e.id}:${e.source}:${e.target}:${d.typeName ?? ''}:${tip}:${d.parallelIdx ?? 0}:${e.style?.strokeDasharray ?? ''}`;
+      return `${e.id}:${e.source}:${e.target}:${d.typeName ?? ''}:${tip}:${d.parallelIdx ?? 0}:${d.persistent ? 1 : 0}:${e.style?.strokeDasharray ?? ''}`;
     }).join('~');
     return ns + '#' + es;
   }, [computed]);
@@ -877,20 +884,25 @@ export default function MindMap() {
       pdf.addImage(dataUrl, 'PNG', drawX, drawY, drawW, drawH, undefined, 'FAST');
 
       // ---------- Приложение: все видимые связи с полными описаниями ----------
-      const visibleIds = new Set(rfNodes.map(n => n.id));
-      const nameById = new Map((characters.data ?? []).map(c => [c.id, c.name]));
-      const hiddenTypeIds = new Set((relTypes.data ?? []).filter(t => t.hidden_from_manual).map(t => t.id));
-      const relList = (relationships.data ?? [])
-        .filter(r => !hiddenTypeIds.has(r.type_id))
-        .filter(r => visibleIds.has(r.from_character_id) && visibleIds.has(r.to_character_id))
-        .map(r => ({
-          from: nameById.get(r.from_character_id) ?? '?',
-          to: nameById.get(r.to_character_id) ?? '?',
-          type: r.type?.name ?? '—',
-          strength: r.strength ?? 3,
-          desc: (r.description ?? '').trim(),
-        }))
-        .sort((a, b) => a.from.localeCompare(b.from, 'ru') || a.to.localeCompare(b.to, 'ru'));
+      // Берём из тех же рёбер, что на карте (computed.edges) — описания лежат в data.tooltip
+      // и присутствуют независимо от тумблера, поэтому в PDF они попадут всегда.
+      const seen = new Set<string>();
+      const relList: { dir: string; type: string; desc: string }[] = [];
+      for (const e of computed.edges) {
+        const tip = (((e.data as any)?.tooltip ?? []) as { dir: string; type: string; desc: string }[]);
+        for (const t of tip) {
+          const desc = (t.desc ?? '').trim();
+          const key = `${t.dir}|${t.type}|${desc}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          relList.push({ dir: t.dir, type: t.type, desc });
+        }
+      }
+      // Сначала связи с описанием, затем по алфавиту
+      relList.sort((a, b) =>
+        (b.desc ? 1 : 0) - (a.desc ? 1 : 0) || a.dir.localeCompare(b.dir, 'ru'),
+      );
+      const withDesc = relList.filter(r => r.desc).length;
 
       if (relList.length > 0) {
         pdf.addPage('a4', 'landscape');
@@ -906,7 +918,7 @@ export default function MindMap() {
         y += 16;
         pdf.setFontSize(9);
         pdf.setTextColor(168, 156, 155);
-        pdf.text(`Всего связей: ${relList.length}`, 24, y);
+        pdf.text(`Всего связей: ${relList.length} · с описанием: ${withDesc}`, 24, y);
         y += 20;
 
         const leftX = 24;
@@ -920,7 +932,7 @@ export default function MindMap() {
         };
 
         for (const r of relList) {
-          const header = `${r.from} → ${r.to}   ·   ${r.type}   ·   сила ${r.strength}`;
+          const header = r.type ? `${r.dir}   ·   ${r.type}` : r.dir;
           const descLines: string[] = r.desc ? pdf.splitTextToSize(r.desc, wrapW - 14) : [];
           const blockH = 14 + descLines.length * 11 + 9;
           ensureSpace(blockH);
@@ -947,7 +959,7 @@ export default function MindMap() {
     } finally {
       setExporting(false);
     }
-  }, [rfNodes, showPcOnly, hideTheDead, clanFilter, factionFilter, factions.data, focusMode, focusId, hops, categoryFilter, minStrength, showTypes, showDescriptions, characters.data, relationships.data, relTypes.data]);
+  }, [rfNodes, computed, showPcOnly, hideTheDead, clanFilter, factionFilter, factions.data, focusMode, focusId, hops, categoryFilter, minStrength, showTypes, showDescriptions, characters.data]);
 
   return (
     <div className="space-y-3">
@@ -1178,20 +1190,22 @@ function buildEdge(
     : '';
   const fromName = nameById.get(r.from_character_id) ?? '?';
   const toName = nameById.get(r.to_character_id) ?? '?';
-  // Стороны связи для hover-тултипа. Для двунаправленного ребра — обе, чтобы
+  // Стороны связи для подписи. Для двунаправленного ребра — обе, чтобы
   // не терять описание второй стороны (баг: показывалась только заведённая первой).
+  // Описание кладём ВСЕГДА — наведение покажет его независимо от тумблера.
+  // Тумблер showDescription управляет лишь тем, висит ли подпись постоянно (persistent).
   const tooltip: { dir: string; type: string; desc: string }[] = [
     {
       dir: `${fromName} → ${toName}`,
       type: typeName,
-      desc: (showDescription && r.description) ? r.description : '',
+      desc: r.description ?? '',
     },
   ];
   if (reciprocal) {
     tooltip.push({
       dir: `${toName} → ${fromName}`,
       type: reciprocal.type?.name ?? '',
-      desc: (showDescription && reciprocal.description) ? reciprocal.description : '',
+      desc: reciprocal.description ?? '',
     });
   }
 
@@ -1226,6 +1240,7 @@ function buildEdge(
       isBidirectional,
       typeName: titleLine,
       tooltip,
+      persistent: showDescription,
     },
   };
 }
@@ -1361,6 +1376,42 @@ function CreateRelationshipModal({
           {reciprocalName && (
             <p className="text-xs text-ash mt-1">
               ✓ Обратная связь <span className="text-rose">«{reciprocalName}»</span> от {toChar?.name} к {fromChar?.name} будет создана автоматически.
+            </p>
+          )}
+        </div>
+
+        <div>
+          <label className="label">
+            Описание {descRequired && <span className="text-rose">*</span>}
+            {!descRequired && <span className="text-ash text-xs ml-1">(не обязательно — связь NPC↔NPC)</span>}
+          </label>
+          <textarea
+            className="input min-h-[60px]"
+            required={descRequired}
+            value={desc}
+            onChange={e => setDesc(e.target.value)}
+            placeholder={descRequired ? 'Связь касается игрока — опиши историю...' : 'Опционально...'}
+          />
+        </div>
+
+        <div>
+          <label className="label">Сила (1–5)</label>
+          <input type="number" min={1} max={5} className="input w-24" value={strength} onChange={e => setStrength(parseInt(e.target.value || '3'))} />
+        </div>
+
+        {err && <p className="text-rose text-sm">{err}</p>}
+
+        <div className="flex gap-2 justify-end">
+          <button type="button" onClick={onClose} className="btn-ghost">Отмена</button>
+          <button type="submit" className="btn-primary" disabled={busy || (descRequired && !desc.trim())}>
+            {busy ? 'Связываем...' : 'Создать связь'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+.name} будет создана автоматически.
             </p>
           )}
         </div>
