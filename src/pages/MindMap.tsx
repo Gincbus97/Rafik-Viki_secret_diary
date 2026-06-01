@@ -12,6 +12,7 @@ import {
 import 'reactflow/dist/style.css';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
+import { DEJAVU_SANS_BASE64 } from '@/lib/pdfFont';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { createRelWithReciprocal } from '@/lib/relationships';
@@ -152,6 +153,7 @@ function ChronicleEdge(props: EdgeProps) {
 
   // Сохранённое пользовательское смещение
   const [stored, setStored] = useState<EdgeOffset>(() => loadEdgeOffsets()[id] ?? { dx: 0, dy: 0 });
+  const [hovered, setHovered] = useState(false);
   const offsetRef = useRef(stored);
   useEffect(() => { offsetRef.current = stored; }, [stored]);
 
@@ -184,7 +186,9 @@ function ChronicleEdge(props: EdgeProps) {
 
   // Подписи из data (передаются раздельно из buildEdge)
   const typeName: string = ((data as any)?.typeName ?? '') as string;
-  const description: string = ((data as any)?.description ?? '') as string;
+  // tooltip — массив сторон связи (для двунаправленных: обе стороны с их описаниями)
+  const tooltip = (((data as any)?.tooltip ?? []) as { dir: string; type: string; desc: string }[]);
+  const hasTip = tooltip.some(t => t.type || t.desc);
   const strokeColor: string = ((style as any)?.stroke ?? '#a89c9b') as string;
 
   // Описание сдвигаем перпендикулярно от линии — в ту же сторону, что и изгиб
@@ -234,6 +238,17 @@ function ChronicleEdge(props: EdgeProps) {
       </defs>
       <BaseEdge id={id} path={path} markerEnd={markerEnd} markerStart={markerStart} style={style} />
 
+      {/* Широкий прозрачный путь поверх ребра — ловит наведение для тултипа */}
+      <path
+        d={path}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={20}
+        style={{ pointerEvents: 'stroke', cursor: hasTip ? 'help' : 'default' }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      />
+
       {/* Название типа — вдоль линии, цветом ребра, с тёмной обводкой для читаемости поверх фона */}
       {typeName && (
         <text
@@ -250,30 +265,39 @@ function ChronicleEdge(props: EdgeProps) {
         </text>
       )}
 
-      {/* Описание — отдельный пузырь, сдвинутый перпендикулярно от линии и с цветной полоской слева,
-          чтобы глаз сразу видел, к какому ребру он относится */}
-      {description && (
+      {/* Тултип при наведении: тип + описание. Для двунаправленных рёбер — обе стороны,
+          чтобы ничего не терялось и подписи не наезжали на граф. */}
+      {hovered && hasTip && (
         <EdgeLabelRenderer>
           <div
-            className="nodrag nopan pointer-events-auto"
+            className="nodrag nopan"
             style={{
               position: 'absolute',
               transform: `translate(-50%, -50%) translate(${descX}px, ${descY}px)`,
-              padding: '3px 7px',
-              borderRadius: 4,
-              background: 'rgba(29,16,20,0.92)',
-              border: `1px solid ${strokeColor}55`,
+              padding: '6px 9px',
+              borderRadius: 6,
+              background: 'rgba(20,11,15,0.97)',
+              border: `1px solid ${strokeColor}77`,
               borderLeft: `3px solid ${strokeColor}`,
-              fontSize: 10,
+              fontSize: 11,
               color: '#e8e2d4',
               fontFamily: 'Inter, sans-serif',
-              maxWidth: 200,
+              maxWidth: 240,
               whiteSpace: 'pre-wrap',
-              lineHeight: 1.25,
-              boxShadow: '0 1px 4px rgba(0,0,0,0.55)',
+              lineHeight: 1.3,
+              boxShadow: '0 2px 10px rgba(0,0,0,0.7)',
+              pointerEvents: 'none',
+              zIndex: 1000,
             }}
           >
-            {description}
+            {tooltip.filter(t => t.type || t.desc).map((t, i, arr) => (
+              <div key={i} style={{ marginBottom: i < arr.length - 1 ? 7 : 0 }}>
+                <div style={{ color: strokeColor, fontWeight: 600 }}>
+                  {t.dir}{t.type ? ` · ${t.type}` : ''}
+                </div>
+                {t.desc && <div style={{ marginTop: 1 }}>{t.desc}</div>}
+              </div>
+            ))}
           </div>
         </EdgeLabelRenderer>
       )}
@@ -625,6 +649,8 @@ export default function MindMap() {
     // Карта позиций для smart-routing хэндлов
     const posById = new Map<string, { x: number; y: number }>();
     for (const n of nodes) posById.set(n.id, n.position);
+    // Имена для подписей в тултипе
+    const nameById = new Map<string, string>(characters.data.map(c => [c.id, c.name]));
 
     const edges: Edge[] = [];
     for (const [, rels] of groups) {
@@ -653,17 +679,17 @@ export default function MindMap() {
         return aP - bP;
       });
       if (sorted.length === 1) {
-        edges.push(buildEdge(sorted[0], false, undefined, 0, showDescriptions, showTypes, posById));
+        edges.push(buildEdge(sorted[0], false, undefined, 0, showDescriptions, showTypes, posById, nameById));
         continue;
       }
       const reciprocalPair = findReciprocalPair(sorted);
       if (reciprocalPair) {
         const [r1, r2] = reciprocalPair;
-        edges.push(buildEdge(r1, false, r2, 0, showDescriptions, showTypes, posById));
+        edges.push(buildEdge(r1, false, r2, 0, showDescriptions, showTypes, posById, nameById));
         const remaining = sorted.filter(x => x !== r1 && x !== r2);
-        remaining.forEach((r, idx) => edges.push(buildEdge(r, true, undefined, idx + 1, showDescriptions, showTypes, posById)));
+        remaining.forEach((r, idx) => edges.push(buildEdge(r, true, undefined, idx + 1, showDescriptions, showTypes, posById, nameById)));
       } else {
-        sorted.forEach((r, idx) => edges.push(buildEdge(r, idx > 0, undefined, idx, showDescriptions, showTypes, posById)));
+        sorted.forEach((r, idx) => edges.push(buildEdge(r, idx > 0, undefined, idx, showDescriptions, showTypes, posById, nameById)));
       }
     }
 
@@ -677,7 +703,8 @@ export default function MindMap() {
     const ns = computed.nodes.map(n => `${n.id}:${Math.round(n.position.x)}:${Math.round(n.position.y)}:${(n.data as any)?.selected ? 1 : 0}:${n.draggable ? 1 : 0}`).join('|');
     const es = computed.edges.map(e => {
       const d = (e.data as any) ?? {};
-      return `${e.id}:${e.source}:${e.target}:${d.typeName ?? ''}:${d.description ?? ''}:${d.parallelIdx ?? 0}:${e.style?.strokeDasharray ?? ''}`;
+      const tip = (d.tooltip ?? []).map((t: any) => `${t.type}|${t.desc}`).join(';');
+      return `${e.id}:${e.source}:${e.target}:${d.typeName ?? ''}:${tip}:${d.parallelIdx ?? 0}:${e.style?.strokeDasharray ?? ''}`;
     }).join('~');
     return ns + '#' + es;
   }, [computed]);
@@ -783,6 +810,12 @@ export default function MindMap() {
 
       // Собираем PDF (A4 landscape; вписываем картинку сохраняя пропорции)
       const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+
+      // Встраиваем кириллический шрифт (иначе русский текст превращается в кашу)
+      pdf.addFileToVFS('DejaVuSans.ttf', DEJAVU_SANS_BASE64);
+      pdf.addFont('DejaVuSans.ttf', 'DejaVuSans', 'normal');
+      pdf.setFont('DejaVuSans');
+
       const pageW = pdf.internal.pageSize.getWidth();
       const pageH = pdf.internal.pageSize.getHeight();
 
@@ -793,7 +826,7 @@ export default function MindMap() {
       // Заголовок
       pdf.setTextColor(232, 226, 212);
       pdf.setFontSize(14);
-      pdf.text('Vampire: The Masquerade - Mind Map', 24, 28);
+      pdf.text('Vampire: The Masquerade — Карта связей', 24, 28);
 
       // Под-заголовок: дата + активные фильтры
       const filters: string[] = [];
@@ -821,7 +854,7 @@ export default function MindMap() {
       pdf.text(dateStr, 24, 44);
       if (filters.length > 0) {
         // Перенос длинной строки фильтров вручную
-        const filtersLine = pdf.splitTextToSize('Filters: ' + filters.join(' / '), pageW - 200);
+        const filtersLine = pdf.splitTextToSize('Фильтры: ' + filters.join(' / '), pageW - 200);
         pdf.text(filtersLine, 200, 44);
       }
 
@@ -843,6 +876,68 @@ export default function MindMap() {
 
       pdf.addImage(dataUrl, 'PNG', drawX, drawY, drawW, drawH, undefined, 'FAST');
 
+      // ---------- Приложение: все видимые связи с полными описаниями ----------
+      const visibleIds = new Set(rfNodes.map(n => n.id));
+      const nameById = new Map((characters.data ?? []).map(c => [c.id, c.name]));
+      const hiddenTypeIds = new Set((relTypes.data ?? []).filter(t => t.hidden_from_manual).map(t => t.id));
+      const relList = (relationships.data ?? [])
+        .filter(r => !hiddenTypeIds.has(r.type_id))
+        .filter(r => visibleIds.has(r.from_character_id) && visibleIds.has(r.to_character_id))
+        .map(r => ({
+          from: nameById.get(r.from_character_id) ?? '?',
+          to: nameById.get(r.to_character_id) ?? '?',
+          type: r.type?.name ?? '—',
+          strength: r.strength ?? 3,
+          desc: (r.description ?? '').trim(),
+        }))
+        .sort((a, b) => a.from.localeCompare(b.from, 'ru') || a.to.localeCompare(b.to, 'ru'));
+
+      if (relList.length > 0) {
+        pdf.addPage('a4', 'landscape');
+        const newPage = () => {
+          pdf.setFillColor(12, 6, 8);
+          pdf.rect(0, 0, pageW, pageH, 'F');
+        };
+        newPage();
+        let y = 40;
+        pdf.setTextColor(232, 226, 212);
+        pdf.setFontSize(15);
+        pdf.text('Все связи и описания', 24, y);
+        y += 16;
+        pdf.setFontSize(9);
+        pdf.setTextColor(168, 156, 155);
+        pdf.text(`Всего связей: ${relList.length}`, 24, y);
+        y += 20;
+
+        const leftX = 24;
+        const wrapW = pageW - 60;
+        const ensureSpace = (need: number) => {
+          if (y + need > pageH - 28) {
+            pdf.addPage('a4', 'landscape');
+            newPage();
+            y = 40;
+          }
+        };
+
+        for (const r of relList) {
+          const header = `${r.from} → ${r.to}   ·   ${r.type}   ·   сила ${r.strength}`;
+          const descLines: string[] = r.desc ? pdf.splitTextToSize(r.desc, wrapW - 14) : [];
+          const blockH = 14 + descLines.length * 11 + 9;
+          ensureSpace(blockH);
+          pdf.setFontSize(10.5);
+          pdf.setTextColor(216, 83, 110); // rose — шапка связи
+          pdf.text(header, leftX, y);
+          y += 14;
+          if (descLines.length > 0) {
+            pdf.setFontSize(9.5);
+            pdf.setTextColor(206, 198, 186);
+            pdf.text(descLines, leftX + 14, y);
+            y += descLines.length * 11;
+          }
+          y += 9;
+        }
+      }
+
       const fname = `chronicle-map-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.pdf`;
       pdf.save(fname);
     } catch (e: any) {
@@ -852,7 +947,7 @@ export default function MindMap() {
     } finally {
       setExporting(false);
     }
-  }, [rfNodes, showPcOnly, hideTheDead, clanFilter, factionFilter, factions.data, focusMode, focusId, hops, categoryFilter, minStrength, showTypes, showDescriptions, characters.data]);
+  }, [rfNodes, showPcOnly, hideTheDead, clanFilter, factionFilter, factions.data, focusMode, focusId, hops, categoryFilter, minStrength, showTypes, showDescriptions, characters.data, relationships.data, relTypes.data]);
 
   return (
     <div className="space-y-3">
@@ -1065,6 +1160,7 @@ function buildEdge(
   showDescription: boolean,
   showTypes: boolean,
   posById: Map<string, { x: number; y: number }>,
+  nameById: Map<string, string>,
 ): Edge {
   const cat = r.type?.category ?? 'personal';
   // Цвет/пунктир/толщина — сначала из настроек типа в БД, потом фоллбэк по имени
@@ -1080,7 +1176,24 @@ function buildEdge(
         ? (typeName === otherTypeName ? typeName : `${typeName} ↔ ${otherTypeName}`)
         : typeName)
     : '';
-  const desc = (showDescription && r.description) ? r.description : '';
+  const fromName = nameById.get(r.from_character_id) ?? '?';
+  const toName = nameById.get(r.to_character_id) ?? '?';
+  // Стороны связи для hover-тултипа. Для двунаправленного ребра — обе, чтобы
+  // не терять описание второй стороны (баг: показывалась только заведённая первой).
+  const tooltip: { dir: string; type: string; desc: string }[] = [
+    {
+      dir: `${fromName} → ${toName}`,
+      type: typeName,
+      desc: (showDescription && r.description) ? r.description : '',
+    },
+  ];
+  if (reciprocal) {
+    tooltip.push({
+      dir: `${toName} → ${fromName}`,
+      type: reciprocal.type?.name ?? '',
+      desc: (showDescription && reciprocal.description) ? reciprocal.description : '',
+    });
+  }
 
   const { sourceHandle, targetHandle } = pickHandles(
     posById.get(r.from_character_id),
@@ -1112,7 +1225,7 @@ function buildEdge(
       parallelIdx,
       isBidirectional,
       typeName: titleLine,
-      description: desc,
+      tooltip,
     },
   };
 }
