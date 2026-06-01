@@ -408,6 +408,9 @@ export default function MindMap() {
   const [lockPositions, setLockPositions] = useState(true);
   const [showDescriptions, setShowDescriptions] = useState(true);
   const [showTypes, setShowTypes] = useState(true);
+  // На время экспорта PDF принудительно показываем описания на самой карте,
+  // даже если тумблер выключен — чтобы они попали в картинку.
+  const [forceDescExport, setForceDescExport] = useState(false);
 
   const [pendingConnect, setPendingConnect] = useState<{ from: string; to: string } | null>(null);
 
@@ -658,6 +661,8 @@ export default function MindMap() {
     for (const n of nodes) posById.set(n.id, n.position);
     // Имена для подписей в тултипе
     const nameById = new Map<string, string>(characters.data.map(c => [c.id, c.name]));
+    // Постоянный показ описаний: тумблер ИЛИ принудительно на время экспорта PDF
+    const persistDesc = showDescriptions || forceDescExport;
 
     const edges: Edge[] = [];
     for (const [, rels] of groups) {
@@ -686,22 +691,22 @@ export default function MindMap() {
         return aP - bP;
       });
       if (sorted.length === 1) {
-        edges.push(buildEdge(sorted[0], false, undefined, 0, showDescriptions, showTypes, posById, nameById));
+        edges.push(buildEdge(sorted[0], false, undefined, 0, persistDesc, showTypes, posById, nameById));
         continue;
       }
       const reciprocalPair = findReciprocalPair(sorted);
       if (reciprocalPair) {
         const [r1, r2] = reciprocalPair;
-        edges.push(buildEdge(r1, false, r2, 0, showDescriptions, showTypes, posById, nameById));
+        edges.push(buildEdge(r1, false, r2, 0, persistDesc, showTypes, posById, nameById));
         const remaining = sorted.filter(x => x !== r1 && x !== r2);
-        remaining.forEach((r, idx) => edges.push(buildEdge(r, true, undefined, idx + 1, showDescriptions, showTypes, posById, nameById)));
+        remaining.forEach((r, idx) => edges.push(buildEdge(r, true, undefined, idx + 1, persistDesc, showTypes, posById, nameById)));
       } else {
-        sorted.forEach((r, idx) => edges.push(buildEdge(r, idx > 0, undefined, idx, showDescriptions, showTypes, posById, nameById)));
+        sorted.forEach((r, idx) => edges.push(buildEdge(r, idx > 0, undefined, idx, persistDesc, showTypes, posById, nameById)));
       }
     }
 
     return { nodes, edges };
-  }, [characters.data, relationships.data, relTypes.data, showPcOnly, hideTheDead, clanFilter, charactersInFaction, focusMode, focusId, hops, minStrength, lockPositions, categoryFilter, showDescriptions, showTypes]);
+  }, [characters.data, relationships.data, relTypes.data, showPcOnly, hideTheDead, clanFilter, charactersInFaction, focusMode, focusId, hops, minStrength, lockPositions, categoryFilter, showDescriptions, forceDescExport, showTypes]);
 
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);
@@ -769,6 +774,11 @@ export default function MindMap() {
     try {
       setExporting(true);
 
+      // Принудительно показываем описания на самой карте и ждём перерисовку,
+      // чтобы они попали в картинку (даже если тумблер выключен).
+      setForceDescExport(true);
+      await new Promise<void>((resolve) => setTimeout(resolve, 500));
+
       const viewportEl = document.querySelector('.react-flow__viewport') as HTMLElement | null;
       if (!viewportEl) throw new Error('Не нашли viewport React Flow');
 
@@ -800,7 +810,7 @@ export default function MindMap() {
         backgroundColor: '#0c0608',
         width: totalW,
         height: totalH,
-        pixelRatio: 2,
+        pixelRatio: 3,
         cacheBust: true,
         style: {
           width: `${totalW}px`,
@@ -815,20 +825,32 @@ export default function MindMap() {
         },
       });
 
-      // Собираем PDF (A4 landscape; вписываем картинку сохраняя пропорции)
-      const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+      // Размер страницы PDF подгоняем ПОД ГРАФ (не ужимаем в мелкий A4),
+      // чтобы узлы и подписи остались крупными и читаемыми. Сверху — полоса под заголовок.
+      const headerH = 54;
+      // Масштаб px→pt: держим страницу разумного размера, но крупной для чтения.
+      const scale = Math.min(0.75, 1500 / totalW);
+      const pageW = Math.round(totalW * scale);
+      const pageH = Math.round(totalH * scale) + headerH;
+
+      const pdf = new jsPDF({
+        orientation: pageW >= pageH ? 'landscape' : 'portrait',
+        unit: 'pt',
+        format: [pageW, pageH],
+      });
 
       // Встраиваем кириллический шрифт (иначе русский текст превращается в кашу)
       pdf.addFileToVFS('DejaVuSans.ttf', DEJAVU_SANS_BASE64);
       pdf.addFont('DejaVuSans.ttf', 'DejaVuSans', 'normal');
       pdf.setFont('DejaVuSans');
 
-      const pageW = pdf.internal.pageSize.getWidth();
-      const pageH = pdf.internal.pageSize.getHeight();
+      // Реальные размеры страницы (jsPDF может нормализовать ориентацию)
+      const realW = pdf.internal.pageSize.getWidth();
+      const realH = pdf.internal.pageSize.getHeight();
 
       // Фон цвета крипта
       pdf.setFillColor(12, 6, 8);
-      pdf.rect(0, 0, pageW, pageH, 'F');
+      pdf.rect(0, 0, realW, realH, 'F');
 
       // Заголовок
       pdf.setTextColor(232, 226, 212);
@@ -853,7 +875,6 @@ export default function MindMap() {
       }
       if (minStrength > 1) filters.push(`strength >= ${minStrength}`);
       if (!showTypes) filters.push('no type labels');
-      if (!showDescriptions) filters.push('no descriptions');
 
       const dateStr = new Date().toLocaleString('ru-RU');
       pdf.setFontSize(9);
@@ -861,15 +882,15 @@ export default function MindMap() {
       pdf.text(dateStr, 24, 44);
       if (filters.length > 0) {
         // Перенос длинной строки фильтров вручную
-        const filtersLine = pdf.splitTextToSize('Фильтры: ' + filters.join(' / '), pageW - 200);
+        const filtersLine = pdf.splitTextToSize('Фильтры: ' + filters.join(' / '), realW - 200);
         pdf.text(filtersLine, 200, 44);
       }
 
-      // Область для картинки
-      const areaX = 24;
-      const areaY = 56;
-      const areaW = pageW - 48;
-      const areaH = pageH - 76;
+      // Картинка карты заполняет всю страницу под заголовком, сохраняя пропорции
+      const areaX = 8;
+      const areaY = headerH;
+      const areaW = realW - 16;
+      const areaH = realH - headerH - 8;
 
       const aspect = totalW / totalH;
       let drawW = areaW;
@@ -883,73 +904,6 @@ export default function MindMap() {
 
       pdf.addImage(dataUrl, 'PNG', drawX, drawY, drawW, drawH, undefined, 'FAST');
 
-      // ---------- Приложение: все видимые связи с полными описаниями ----------
-      // Берём из тех же рёбер, что на карте (computed.edges) — описания лежат в data.tooltip
-      // и присутствуют независимо от тумблера, поэтому в PDF они попадут всегда.
-      const seen = new Set<string>();
-      const relList: { dir: string; type: string; desc: string }[] = [];
-      for (const e of computed.edges) {
-        const tip = (((e.data as any)?.tooltip ?? []) as { dir: string; type: string; desc: string }[]);
-        for (const t of tip) {
-          const desc = (t.desc ?? '').trim();
-          const key = `${t.dir}|${t.type}|${desc}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          relList.push({ dir: t.dir, type: t.type, desc });
-        }
-      }
-      // Сначала связи с описанием, затем по алфавиту
-      relList.sort((a, b) =>
-        (b.desc ? 1 : 0) - (a.desc ? 1 : 0) || a.dir.localeCompare(b.dir, 'ru'),
-      );
-      const withDesc = relList.filter(r => r.desc).length;
-
-      if (relList.length > 0) {
-        pdf.addPage('a4', 'landscape');
-        const newPage = () => {
-          pdf.setFillColor(12, 6, 8);
-          pdf.rect(0, 0, pageW, pageH, 'F');
-        };
-        newPage();
-        let y = 40;
-        pdf.setTextColor(232, 226, 212);
-        pdf.setFontSize(15);
-        pdf.text('Все связи и описания', 24, y);
-        y += 16;
-        pdf.setFontSize(9);
-        pdf.setTextColor(168, 156, 155);
-        pdf.text(`Всего связей: ${relList.length} · с описанием: ${withDesc}`, 24, y);
-        y += 20;
-
-        const leftX = 24;
-        const wrapW = pageW - 60;
-        const ensureSpace = (need: number) => {
-          if (y + need > pageH - 28) {
-            pdf.addPage('a4', 'landscape');
-            newPage();
-            y = 40;
-          }
-        };
-
-        for (const r of relList) {
-          const header = r.type ? `${r.dir}   ·   ${r.type}` : r.dir;
-          const descLines: string[] = r.desc ? pdf.splitTextToSize(r.desc, wrapW - 14) : [];
-          const blockH = 14 + descLines.length * 11 + 9;
-          ensureSpace(blockH);
-          pdf.setFontSize(10.5);
-          pdf.setTextColor(216, 83, 110); // rose — шапка связи
-          pdf.text(header, leftX, y);
-          y += 14;
-          if (descLines.length > 0) {
-            pdf.setFontSize(9.5);
-            pdf.setTextColor(206, 198, 186);
-            pdf.text(descLines, leftX + 14, y);
-            y += descLines.length * 11;
-          }
-          y += 9;
-        }
-      }
-
       const fname = `chronicle-map-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.pdf`;
       pdf.save(fname);
     } catch (e: any) {
@@ -957,9 +911,10 @@ export default function MindMap() {
       alert('Не удалось выгрузить PDF: ' + (e?.message ?? String(e)) +
         '\n\nЧасто помогает: 1) нажать "Авто-раскладка" и попробовать снова; 2) убедиться, что портреты ссылаются на CORS-разрешённые источники (Imgur, Supabase Storage).');
     } finally {
+      setForceDescExport(false);
       setExporting(false);
     }
-  }, [rfNodes, computed, showPcOnly, hideTheDead, clanFilter, factionFilter, factions.data, focusMode, focusId, hops, categoryFilter, minStrength, showTypes, showDescriptions, characters.data]);
+  }, [rfNodes, showPcOnly, hideTheDead, clanFilter, factionFilter, factions.data, focusMode, focusId, hops, categoryFilter, minStrength, showTypes, characters.data]);
 
   return (
     <div className="space-y-3">
@@ -1376,42 +1331,6 @@ function CreateRelationshipModal({
           {reciprocalName && (
             <p className="text-xs text-ash mt-1">
               ✓ Обратная связь <span className="text-rose">«{reciprocalName}»</span> от {toChar?.name} к {fromChar?.name} будет создана автоматически.
-            </p>
-          )}
-        </div>
-
-        <div>
-          <label className="label">
-            Описание {descRequired && <span className="text-rose">*</span>}
-            {!descRequired && <span className="text-ash text-xs ml-1">(не обязательно — связь NPC↔NPC)</span>}
-          </label>
-          <textarea
-            className="input min-h-[60px]"
-            required={descRequired}
-            value={desc}
-            onChange={e => setDesc(e.target.value)}
-            placeholder={descRequired ? 'Связь касается игрока — опиши историю...' : 'Опционально...'}
-          />
-        </div>
-
-        <div>
-          <label className="label">Сила (1–5)</label>
-          <input type="number" min={1} max={5} className="input w-24" value={strength} onChange={e => setStrength(parseInt(e.target.value || '3'))} />
-        </div>
-
-        {err && <p className="text-rose text-sm">{err}</p>}
-
-        <div className="flex gap-2 justify-end">
-          <button type="button" onClick={onClose} className="btn-ghost">Отмена</button>
-          <button type="submit" className="btn-primary" disabled={busy || (descRequired && !desc.trim())}>
-            {busy ? 'Связываем...' : 'Создать связь'}
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-.name} будет создана автоматически.
             </p>
           )}
         </div>
